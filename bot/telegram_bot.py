@@ -22,7 +22,7 @@ _awaiting_qty: set[int] = set()
 async def _edit(query: "CallbackQuery", text: str, **kwargs):
     """Edita mensagem ignorando erro de conteúdo idêntico."""
     try:
-        await _edit(query,text, **kwargs)
+        await query.message.edit_text(text, **kwargs)
     except Exception as e:
         if "MESSAGE_NOT_MODIFIED" not in str(e):
             raise
