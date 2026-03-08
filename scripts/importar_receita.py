@@ -129,7 +129,7 @@ def create_indexes(conn):
 
 # ── Download + import streaming ───────────────────────────────────────────────
 
-def import_municipios(session, conn):
+def import_municipios(session):
     log.info("Baixando Municipios.zip...")
     url = f"{BASE_URL}/public.php/webdav/{PASTA}/Municipios.zip"
     resp = session.get(url, timeout=60)
@@ -147,23 +147,27 @@ def import_municipios(session, conn):
                 if len(row) >= 2:
                     rows.append((row[0].strip(), row[1].strip()))
 
+    conn = get_conn()
     with conn.cursor() as cur:
         cur.executemany(
             "INSERT INTO cnpj_municipios (codigo, nome) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             rows,
         )
         conn.commit()
+    conn.close()
     log.info(f"  {len(rows)} municípios importados.")
 
 
-def import_estabelecimentos(session, conn, filename):
+def import_estabelecimentos(session, filename):
     url = f"{BASE_URL}/public.php/webdav/{PASTA}/{filename}"
     log.info(f"Baixando {filename} (streaming)...")
 
-    # Verifica se já foi importado
+    # Verifica quantos registros existem antes (conexão fresca)
+    conn = get_conn()
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM cnpj_estabelecimentos")
         antes = cur.fetchone()[0]
+    conn.close()
 
     INSERT_SQL = """
         INSERT INTO cnpj_estabelecimentos
@@ -197,67 +201,73 @@ def import_estabelecimentos(session, conn, filename):
                         last_pct = pct
 
     log.info(f"  Download concluído. Extraindo...")
-    with zipfile.ZipFile(tmp_path) as z:
-        fname = z.namelist()[0]
-        log.info(f"  Arquivo interno: {fname}")
-        with z.open(fname) as f:
-            reader = csv.reader(
-                io.TextIOWrapper(f, encoding="iso-8859-1"),
-                delimiter=";", quotechar='"',
-            )
-            batch = []
-            with conn.cursor() as cur:
-                for row in reader:
-                    if len(row) < len(COLS_ESTAB):
-                        continue
 
-                    d = dict(zip(COLS_ESTAB, row))
-                    email = d.get("email", "").strip().lower()
+    # Abre conexão FRESCA para o INSERT (após o download longo)
+    conn = get_conn()
+    try:
+        with zipfile.ZipFile(tmp_path) as z:
+            fname = z.namelist()[0]
+            log.info(f"  Arquivo interno: {fname}")
+            with z.open(fname) as f:
+                reader = csv.reader(
+                    io.TextIOWrapper(f, encoding="iso-8859-1"),
+                    delimiter=";", quotechar='"',
+                )
+                batch = []
+                with conn.cursor() as cur:
+                    for row in reader:
+                        if len(row) < len(COLS_ESTAB):
+                            continue
 
-                    # Filtra: só ativas com email
-                    if d.get("situacao_cadastral") != "02":
-                        continue
-                    if not email or "@" not in email:
-                        continue
+                        d = dict(zip(COLS_ESTAB, row))
+                        email = d.get("email", "").strip().lower()
 
-                    batch.append((
-                        d["cnpj_basico"].strip(),
-                        d["cnpj_ordem"].strip(),
-                        d["cnpj_dv"].strip(),
-                        d["matriz_filial"].strip(),
-                        d["nome_fantasia"].strip() or None,
-                        d["situacao_cadastral"].strip(),
-                        d["data_inicio_atividade"].strip() or None,
-                        d["cnae_fiscal_principal"].strip() or None,
-                        d["uf"].strip() or None,
-                        d["municipio_cod"].strip() or None,
-                        d["ddd1"].strip() or None,
-                        d["telefone1"].strip() or None,
-                        email,
-                    ))
+                        # Filtra: só ativas com email
+                        if d.get("situacao_cadastral") != "02":
+                            continue
+                        if not email or "@" not in email:
+                            continue
 
-                    if len(batch) >= BATCH:
+                        batch.append((
+                            d["cnpj_basico"].strip(),
+                            d["cnpj_ordem"].strip(),
+                            d["cnpj_dv"].strip(),
+                            d["matriz_filial"].strip(),
+                            d["nome_fantasia"].strip() or None,
+                            d["situacao_cadastral"].strip(),
+                            d["data_inicio_atividade"].strip() or None,
+                            d["cnae_fiscal_principal"].strip() or None,
+                            d["uf"].strip() or None,
+                            d["municipio_cod"].strip() or None,
+                            d["ddd1"].strip() or None,
+                            d["telefone1"].strip() or None,
+                            email,
+                        ))
+
+                        if len(batch) >= BATCH:
+                            cur.executemany(INSERT_SQL, batch)
+                            conn.commit()
+                            total += len(batch)
+                            log.info(f"  {total:,} registros importados de {filename}...")
+                            batch = []
+
+                    if batch:
                         cur.executemany(INSERT_SQL, batch)
                         conn.commit()
                         total += len(batch)
-                        log.info(f"  {total:,} registros importados de {filename}...")
-                        batch = []
 
-                if batch:
-                    cur.executemany(INSERT_SQL, batch)
-                    conn.commit()
-                    total += len(batch)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM cnpj_estabelecimentos")
+            depois = cur.fetchone()[0]
+
+        novos = depois - antes
+        log.info(f"  {filename}: +{novos:,} registros (total na tabela: {depois:,})")
+    finally:
+        conn.close()
 
     # Remove arquivo temporário
     if os.path.exists(tmp_path):
         os.remove(tmp_path)
-
-    with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM cnpj_estabelecimentos")
-        depois = cur.fetchone()[0]
-
-    novos = depois - antes
-    log.info(f"  {filename}: +{novos:,} registros (total na tabela: {depois:,})")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -270,39 +280,39 @@ def main():
     log.info("=" * 60)
 
     session = make_session()
-    conn = get_conn()
 
+    # Cria tabelas (conexão rápida)
+    conn = get_conn()
     create_tables(conn)
 
-    # Verifica o que já foi importado
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM cnpj_estabelecimentos")
         existentes = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM cnpj_municipios")
+        mun = cur.fetchone()[0]
+    conn.close()
 
     if existentes > 0:
         log.info(f"Já existem {existentes:,} registros. Continuando de onde parou...")
 
-    # Importa municípios primeiro (pequeno)
-    with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM cnpj_municipios")
-        mun = cur.fetchone()[0]
+    # Importa municípios primeiro (pequeno, conexão própria)
     if mun == 0:
-        import_municipios(session, conn)
+        import_municipios(session)
 
-    # Importa cada arquivo de Estabelecimentos
+    # Importa cada arquivo (cada um abre/fecha sua própria conexão)
     estab_files = [a for a in ARQUIVOS if a.startswith("Estabelecimentos")]
     for i, filename in enumerate(estab_files, 1):
         log.info(f"\n[{i}/{len(estab_files)}] {filename}")
         try:
-            import_estabelecimentos(session, conn, filename)
+            import_estabelecimentos(session, filename)
         except Exception as e:
             log.error(f"Erro em {filename}: {e}")
             log.info("Continuando com o próximo arquivo...")
 
-    # Cria índices ao final
+    # Cria índices ao final (conexão fresca)
+    conn = get_conn()
     create_indexes(conn)
 
-    # Resultado final
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM cnpj_estabelecimentos")
         total = cur.fetchone()[0]
@@ -313,6 +323,7 @@ def main():
             GROUP BY cnae_fiscal_principal ORDER BY qtd DESC
         """)
         cnaes = cur.fetchall()
+    conn.close()
 
     log.info("\n" + "=" * 60)
     log.info(f"IMPORTACAO CONCLUIDA: {total:,} estabelecimentos com email")
@@ -320,7 +331,6 @@ def main():
     for cnae, qtd in cnaes:
         log.info(f"  {cnae}: {qtd:,} empresas")
     log.info("=" * 60)
-    conn.close()
 
 
 if __name__ == "__main__":
