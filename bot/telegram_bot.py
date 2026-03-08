@@ -89,6 +89,9 @@ def kb_main():
         [
             InlineKeyboardButton("🔃  Atualizar",       callback_data="menu_main"),
         ],
+        [
+            InlineKeyboardButton("🧪  Enviar Email Teste", callback_data="menu_test_email"),
+        ],
     ])
 
 
@@ -232,6 +235,9 @@ def register_handlers(client: Client):
 
         elif data == "confirm_reset_sent":
             await _do_reset_sent(query)
+
+        elif data == "menu_test_email":
+            await _send_test_email(query)
 
     @client.on_message(filters.text & filters.private & ~filters.command(["start"]))
     async def on_text(_, message: Message):
@@ -612,6 +618,42 @@ async def _show_reset_confirm(query: CallbackQuery):
             [InlineKeyboardButton("❌  Cancelar", callback_data="menu_main")],
         ]),
     )
+
+
+async def _send_test_email(query: CallbackQuery):
+    from mailer.smtp_sender import send_email
+    from worker_queue.email_queue import EMAIL_SUBJECTS
+
+    TEST_EMAIL = "decopt10@gmail.com"
+    subject = random.choice(EMAIL_SUBJECTS)
+
+    await _edit(query,
+        "⏳  **Enviando email de teste...**\n\n"
+        f"Para: `{TEST_EMAIL}`",
+        reply_markup=None,
+    )
+
+    success = await asyncio.to_thread(
+        send_email,
+        to=TEST_EMAIL,
+        subject=subject,
+        company_name="TopAgenda Teste",
+    )
+
+    if success:
+        await query.message.reply(
+            "✅  **Email de teste enviado!**\n\n"
+            f"📬  Para: `{TEST_EMAIL}`\n"
+            f"📝  Assunto: __{subject}__\n\n"
+            "Verifique sua caixa de entrada.",
+            reply_markup=kb_back(),
+        )
+    else:
+        await query.message.reply(
+            "❌  **Falha ao enviar email de teste.**\n\n"
+            "Verifique as configurações de SMTP nos logs.",
+            reply_markup=kb_back(),
+        )
 
 
 async def _do_reset_sent(query: CallbackQuery):
