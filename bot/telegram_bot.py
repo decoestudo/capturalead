@@ -7,7 +7,6 @@ from pyrogram.types import (
     Message, CallbackQuery,
     InlineKeyboardMarkup, InlineKeyboardButton,
 )
-from pyrogram.enums import ParseMode
 
 from config.settings import (
     TELEGRAM_TOKEN, TELEGRAM_ADMIN_CHAT_ID,
@@ -16,13 +15,11 @@ from config.settings import (
 
 logger = logging.getLogger(__name__)
 
-COUNTRY = "brasil"  # Receita Federal = sempre Brasil
-
-# chat_ids aguardando digitação de quantidade customizada
+COUNTRY = "brasil"
 _awaiting_qty: set[int] = set()
 
 
-# ── client factory ────────────────────────────────────────────────────────────
+# ── client ────────────────────────────────────────────────────────────────────
 
 def create_client() -> Client:
     return Client(
@@ -33,12 +30,35 @@ def create_client() -> Client:
     )
 
 
-# ── admin check ───────────────────────────────────────────────────────────────
-
 def _is_admin(chat_id: int) -> bool:
     if not TELEGRAM_ADMIN_CHAT_ID:
         return True
     return str(chat_id) == str(TELEGRAM_ADMIN_CHAT_ID)
+
+
+# ── helpers visuais ───────────────────────────────────────────────────────────
+
+def _bar(pct: int, size: int = 12) -> str:
+    filled = int(pct * size / 100)
+    return "▓" * filled + "░" * (size - filled)
+
+
+def _get_quick_stats() -> dict:
+    try:
+        from database.db import get_connection
+        from psycopg2.extras import RealDictCursor
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT
+                        COUNT(*) AS total,
+                        SUM(CASE WHEN sent     THEN 1 ELSE 0 END) AS sent,
+                        SUM(CASE WHEN NOT sent THEN 1 ELSE 0 END) AS pending
+                    FROM leads
+                """)
+                return dict(cur.fetchone())
+    except Exception:
+        return {"total": 0, "sent": 0, "pending": 0}
 
 
 # ── teclados ──────────────────────────────────────────────────────────────────
@@ -46,16 +66,19 @@ def _is_admin(chat_id: int) -> bool:
 def kb_main():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🔍 Coletar Leads",    callback_data="menu_scrape"),
-            InlineKeyboardButton("📤 Enviar Campanha",  callback_data="menu_campaign"),
+            InlineKeyboardButton("🔍  Coletar Leads",   callback_data="menu_scrape"),
+            InlineKeyboardButton("📤  Enviar Campanha", callback_data="menu_campaign"),
         ],
         [
-            InlineKeyboardButton("📋 Ver Leads",        callback_data="leads_p1"),
-            InlineKeyboardButton("📊 Estatísticas",     callback_data="menu_stats"),
+            InlineKeyboardButton("📋  Ver Leads",       callback_data="leads_p1"),
+            InlineKeyboardButton("📊  Estatísticas",    callback_data="menu_stats"),
         ],
         [
-            InlineKeyboardButton("📬 Envios Hoje",      callback_data="menu_daily"),
-            InlineKeyboardButton("🔄 Resetar Enviados", callback_data="menu_reset"),
+            InlineKeyboardButton("📬  Envios Hoje",     callback_data="menu_daily"),
+            InlineKeyboardButton("🔄  Resetar Enviados",callback_data="menu_reset"),
+        ],
+        [
+            InlineKeyboardButton("🔃  Atualizar",       callback_data="menu_main"),
         ],
     ])
 
@@ -63,55 +86,74 @@ def kb_main():
 def kb_quantity():
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🔟  10",   callback_data="qty_10"),
-            InlineKeyboardButton("5️⃣0  50",  callback_data="qty_50"),
-            InlineKeyboardButton("💯 100",   callback_data="qty_100"),
+            InlineKeyboardButton("  10  ", callback_data="qty_10"),
+            InlineKeyboardButton("  50  ", callback_data="qty_50"),
+            InlineKeyboardButton(" 100  ", callback_data="qty_100"),
         ],
         [
-            InlineKeyboardButton("📊 200",   callback_data="qty_200"),
-            InlineKeyboardButton("🚀 500",   callback_data="qty_500"),
+            InlineKeyboardButton(" 200  ", callback_data="qty_200"),
+            InlineKeyboardButton(" 500  ", callback_data="qty_500"),
             InlineKeyboardButton("✏️ Outro", callback_data="qty_custom"),
         ],
-        [InlineKeyboardButton("◀️ Voltar", callback_data="menu_main")],
+        [InlineKeyboardButton("◀️  Voltar ao Menu", callback_data="menu_main")],
     ])
 
 
 def kb_back():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Menu Principal", callback_data="menu_main")]
+        [InlineKeyboardButton("◀️  Voltar ao Menu", callback_data="menu_main")]
     ])
 
 
 def kb_leads_nav(page: int, has_more: bool):
     nav = []
     if page > 1:
-        nav.append(InlineKeyboardButton("◀️ Anterior", callback_data=f"leads_p{page - 1}"))
+        nav.append(InlineKeyboardButton(f"◀️ Pág {page - 1}", callback_data=f"leads_p{page - 1}"))
     if has_more:
-        nav.append(InlineKeyboardButton("Próxima ▶️", callback_data=f"leads_p{page + 1}"))
-    rows = ([nav] if nav else []) + [[InlineKeyboardButton("◀️ Menu Principal", callback_data="menu_main")]]
+        nav.append(InlineKeyboardButton(f"Pág {page + 1} ▶️", callback_data=f"leads_p{page + 1}"))
+    rows = ([nav] if nav else []) + [[InlineKeyboardButton("◀️  Voltar ao Menu", callback_data="menu_main")]]
     return InlineKeyboardMarkup(rows)
+
+
+# ── texto do menu principal (com stats ao vivo) ───────────────────────────────
+
+def _main_menu_text() -> str:
+    s = _get_quick_stats()
+    total   = s["total"]   or 0
+    sent    = s["sent"]    or 0
+    pending = s["pending"] or 0
+    pct     = int(sent * 100 / total) if total else 0
+
+    return (
+        "┌─────────────────────────────┐\n"
+        "│   🤖  **TopAgenda Lead Bot**   │\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        "━━━━━━  📊 Resumo  ━━━━━━\n"
+        f"👥  Total de leads:  **{total:,}**\n"
+        f"✅  Enviados:        **{sent:,}**\n"
+        f"📧  Pendentes:      **{pending:,}**\n"
+        f"`{_bar(pct)}` **{pct}%** enviado\n"
+        "\n"
+        "━━━━━━  Menu  ━━━━━━"
+    )
 
 
 # ── handlers ──────────────────────────────────────────────────────────────────
 
 def register_handlers(client: Client):
 
-    # /start
     @client.on_message(filters.command("start") & filters.private)
     async def cmd_start(_, message: Message):
         if not _is_admin(message.chat.id):
-            await message.reply("Acesso negado.")
+            await message.reply("⛔ Acesso negado.")
             return
-        await message.reply(
-            "🤖 **TopAgenda Lead Bot**\n\nEscolha uma opção:",
-            reply_markup=kb_main(),
-        )
+        await message.reply(_main_menu_text(), reply_markup=kb_main())
 
-    # callbacks
     @client.on_callback_query()
     async def on_callback(_, query: CallbackQuery):
         if not _is_admin(query.message.chat.id):
-            await query.answer("Acesso negado.", show_alert=True)
+            await query.answer("⛔ Acesso negado.", show_alert=True)
             return
 
         data = query.data
@@ -119,17 +161,22 @@ def register_handlers(client: Client):
 
         # ── menu principal ────────────────────────────────────────────────
         if data == "menu_main":
-            await query.message.edit_text(
-                "🤖 **TopAgenda Lead Bot**\n\nEscolha uma opção:",
-                reply_markup=kb_main(),
-            )
+            await query.message.edit_text(_main_menu_text(), reply_markup=kb_main())
 
         # ── coletar leads ─────────────────────────────────────────────────
         elif data == "menu_scrape":
+            from scraper.receita_scraper import _check_table_exists
+            fonte = "✅ Receita Federal 🇧🇷 (local)" if _check_table_exists() else "🌐 Casa dos Dados API"
             await query.message.edit_text(
-                "🔍 **Coletar Leads**\n\n"
-                "Quantos leads deseja coletar?\n"
-                "__Fonte: Receita Federal 🇧🇷__",
+                "┌─────────────────────────────┐\n"
+                "│   🔍  **Coletar Leads**         │\n"
+                "└─────────────────────────────┘\n"
+                "\n"
+                f"📡  **Fonte:**  {fonte}\n"
+                f"🏷️  **Nichos:**  8 categorias\n"
+                f"🌎  **País:**    Brasil\n"
+                "\n"
+                "━━━━  Quantos leads?  ━━━━",
                 reply_markup=kb_quantity(),
             )
 
@@ -138,24 +185,25 @@ def register_handlers(client: Client):
             if val == "custom":
                 _awaiting_qty.add(query.message.chat.id)
                 await query.message.edit_text(
-                    "✏️ **Digite a quantidade desejada:**\n__ex: 300, 1000, 5000__",
+                    "✏️  **Digite a quantidade desejada:**\n"
+                    "__Ex: 300, 1000, 5000__\n\n"
+                    "> A coleta para quando atingir o número informado.",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("❌ Cancelar", callback_data="menu_main")]
+                        [InlineKeyboardButton("❌  Cancelar", callback_data="menu_main")]
                     ]),
                 )
             else:
                 qty = int(val)
                 await query.message.edit_text(
-                    f"🚀 Iniciando coleta de **{qty}** leads...\nAcompanhe abaixo.",
+                    f"⏳  **Iniciando coleta de {qty} leads...**\n\n"
+                    f"Acompanhe as atualizações abaixo.\n"
+                    f"__Não é necessário aguardar — o bot avisa quando terminar.__"
                 )
-                asyncio.create_task(
-                    _scraping_task(query._client, query.message.chat.id, qty)
-                )
+                asyncio.create_task(_scraping_task(query._client, query.message.chat.id, qty))
 
         # ── ver leads ─────────────────────────────────────────────────────
         elif data.startswith("leads_p"):
-            page = int(data[7:])
-            await _show_leads_page(query, page)
+            await _show_leads_page(query, int(data[7:]))
 
         # ── estatísticas ──────────────────────────────────────────────────
         elif data == "menu_stats":
@@ -172,14 +220,13 @@ def register_handlers(client: Client):
         elif data == "confirm_send":
             await _do_send_campaign(query)
 
-        # ── reset enviados ────────────────────────────────────────────────
+        # ── reset ─────────────────────────────────────────────────────────
         elif data == "menu_reset":
             await _show_reset_confirm(query)
 
         elif data == "confirm_reset_sent":
             await _do_reset_sent(query)
 
-    # mensagem de texto livre (quantidade customizada)
     @client.on_message(filters.text & filters.private & ~filters.command(["start"]))
     async def on_text(_, message: Message):
         chat_id = message.chat.id
@@ -195,10 +242,16 @@ def register_handlers(client: Client):
             if qty <= 0:
                 raise ValueError
         except ValueError:
-            await message.reply("❌ Valor inválido. Digite um número inteiro positivo.", reply_markup=kb_back())
+            await message.reply(
+                "❌  **Valor inválido.**\nDigite um número inteiro positivo.",
+                reply_markup=kb_back(),
+            )
             return
 
-        await message.reply(f"🚀 Iniciando coleta de **{qty}** leads...")
+        await message.reply(
+            f"⏳  **Iniciando coleta de {qty} leads...**\n\n"
+            f"__O bot avisa quando terminar.__"
+        )
         asyncio.create_task(_scraping_task(message._client, chat_id, qty))
 
 
@@ -213,8 +266,8 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
     from database.db import insert_lead
 
     use_receita = _check_table_exists()
-    total_new = 0
-    stop_event = asyncio.Event()
+    total_new   = 0
+    stop_event  = asyncio.Event()
     seen_websites: set = set()
 
     async def save_lead(company_name, email, website, phone, source, niche) -> bool:
@@ -223,13 +276,9 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
             return False
         inserted = await asyncio.to_thread(
             insert_lead,
-            company_name=company_name,
-            email=email.lower(),
-            website=website,
-            phone=phone,
-            source=source,
-            niche=niche,
-            country=COUNTRY,
+            company_name=company_name, email=email.lower(),
+            website=website, phone=phone,
+            source=source, niche=niche, country=COUNTRY,
         )
         if inserted:
             total_new += 1
@@ -246,11 +295,11 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
             for c in companies:
                 if stop_event.is_set():
                     break
-                if await save_lead(c.get("company_name", ""), c.get("email", ""),
-                                   "", c.get("phone", ""), "receita_federal", niche):
+                if await save_lead(c.get("company_name",""), c.get("email",""),
+                                   "", c.get("phone",""), "receita_federal", niche):
                     count += 1
             if count:
-                await client.send_message(chat_id, f"✅ {niche}: {count} leads salvos")
+                await client.send_message(chat_id, f"  ✅  **{niche}** → {count} leads salvos")
         except Exception as e:
             logger.error(f"[Receita] {niche}: {e}")
 
@@ -263,11 +312,11 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
             for c in companies:
                 if stop_event.is_set():
                     break
-                if await save_lead(c.get("company_name", ""), c.get("email", ""),
-                                   c.get("website", ""), "", "casadosdados_api", niche):
+                if await save_lead(c.get("company_name",""), c.get("email",""),
+                                   c.get("website",""), "", "casadosdados_api", niche):
                     count += 1
             if count:
-                await client.send_message(chat_id, f"✅ {niche}: {count} leads salvos")
+                await client.send_message(chat_id, f"  ✅  **{niche}** → {count} leads salvos")
         except Exception as e:
             logger.error(f"[CasaDados] {niche}: {e}")
 
@@ -281,18 +330,18 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                 if stop_event.is_set():
                     break
                 for email in c.get("direct_emails", []):
-                    if await save_lead(c.get("company_name", ""), email,
-                                       c.get("website", ""), c.get("phone", ""), "google_maps", niche):
+                    if await save_lead(c.get("company_name",""), email,
+                                       c.get("website",""), c.get("phone",""), "google_maps", niche):
                         count += 1
                 website = c.get("website")
                 if website and not stop_event.is_set():
                     for email in await asyncio.to_thread(extract_emails, website):
                         if stop_event.is_set():
                             break
-                        await save_lead(c.get("company_name", ""), email, website,
-                                        c.get("phone", ""), "google_maps_site", niche)
+                        await save_lead(c.get("company_name",""), email, website,
+                                        c.get("phone",""), "google_maps_site", niche)
             if count:
-                await client.send_message(chat_id, f"✅ Maps {niche}: {count} leads")
+                await client.send_message(chat_id, f"  ✅  Maps **{niche}** → {count} leads")
         except Exception as e:
             logger.error(f"[Maps] {niche}: {e}")
 
@@ -306,16 +355,25 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                 if stop_event.is_set():
                     break
                 for email in c.get("direct_emails", []):
-                    if await save_lead(c.get("company_name", ""), email,
-                                       c.get("website", ""), c.get("phone", ""), "bing_search", niche):
+                    if await save_lead(c.get("company_name",""), email,
+                                       c.get("website",""), c.get("phone",""), "bing_search", niche):
                         count += 1
             if count:
-                await client.send_message(chat_id, f"✅ Bing {niche}: {count} leads")
+                await client.send_message(chat_id, f"  ✅  Bing **{niche}** → {count} leads")
         except Exception as e:
             logger.error(f"[Bing] {niche}: {e}")
 
     fonte = "Receita Federal 🇧🇷" if use_receita else "Casa dos Dados API"
-    await client.send_message(chat_id, f"📡 Fonte: **{fonte}** | {len(NICHES)} nichos")
+    await client.send_message(
+        chat_id,
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚀  **Coleta iniciada**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📡  Fonte:  **{fonte}**\n"
+        f"🏷️   Nichos: **{len(NICHES)}** categorias\n"
+        f"🎯  Meta:   **{max_results}** leads\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━",
+    )
 
     for niche in NICHES:
         if stop_event.is_set():
@@ -331,13 +389,19 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
         await asyncio.sleep(random.uniform(1, 3))
 
     from database.db import get_recent_leads
-    recent = get_recent_leads(limit=min(total_new, 15)) if total_new > 0 else []
-    lines = [f"🏁 **Coleta concluída!** {total_new} leads salvos"]
+    recent = get_recent_leads(limit=min(total_new, 10)) if total_new > 0 else []
+
+    lines = [
+        "━━━━━━━━━━━━━━━━━━━━━━━",
+        f"🏁  **Coleta concluída!**",
+        f"📥  **{total_new}** novos leads salvos",
+        "━━━━━━━━━━━━━━━━━━━━━━━",
+    ]
     if recent:
-        lines.append("\n📋 Últimos capturados:")
+        lines.append("\n📋  **Últimos capturados:**")
         for lead in recent:
-            name = (lead["company_name"] or "N/A")[:25]
-            lines.append(f"  • {name} → {lead['email']}")
+            name = (lead["company_name"] or "N/A")[:28]
+            lines.append(f"  `{lead['email']}`\n  _{name}_")
 
     await client.send_message(chat_id, "\n".join(lines), reply_markup=kb_main())
 
@@ -347,20 +411,31 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
 async def _show_leads_page(query: CallbackQuery, page: int):
     from database.db import get_recent_leads
 
-    limit = 10
+    limit = 8
     leads = get_recent_leads(limit=limit + 1, offset=(page - 1) * limit)
     has_more = len(leads) > limit
     leads = leads[:limit]
 
     if not leads:
-        await query.message.edit_text("📭 Nenhum lead encontrado.", reply_markup=kb_back())
+        await query.message.edit_text(
+            "📭  **Nenhum lead encontrado.**\n\nUse **Coletar Leads** para começar.",
+            reply_markup=kb_back(),
+        )
         return
 
-    lines = [f"📋 **Leads** — página {page}\n"]
-    for lead in leads:
+    lines = [
+        f"┌─────────────────────────────┐",
+        f"│  📋  **Leads** — Página {page}        │",
+        f"└─────────────────────────────┘",
+        "",
+    ]
+    for i, lead in enumerate(leads, 1):
         icon = "✅" if lead["sent"] else "📧"
-        name = (lead["company_name"] or "N/A")[:25]
-        lines.append(f"{icon} {name}\n`{lead['email']}`")
+        name = (lead["company_name"] or "N/A")[:26]
+        lines.append(f"{icon}  **{name}**")
+        lines.append(f"    `{lead['email']}`")
+        if i < len(leads):
+            lines.append("─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─")
 
     await query.message.edit_text(
         "\n".join(lines),
@@ -373,23 +448,45 @@ async def _show_leads_page(query: CallbackQuery, page: int):
 async def _show_stats(query: CallbackQuery):
     from database.db import get_connection
     from psycopg2.extras import RealDictCursor
+    from worker_queue.email_queue import get_daily_sent, get_daily_limit
 
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
                 SELECT
                     COUNT(*) AS total,
-                    SUM(CASE WHEN sent THEN 1 ELSE 0 END)     AS sent_count,
-                    SUM(CASE WHEN NOT sent THEN 1 ELSE 0 END) AS unsent_count
+                    SUM(CASE WHEN sent     THEN 1 ELSE 0 END) AS sent_count,
+                    SUM(CASE WHEN NOT sent THEN 1 ELSE 0 END) AS unsent_count,
+                    COUNT(DISTINCT niche)  AS niches,
+                    COUNT(DISTINCT source) AS sources
                 FROM leads
             """)
-            stats = cur.fetchone()
+            s = cur.fetchone()
+
+    total   = s["total"]        or 0
+    sent    = s["sent_count"]   or 0
+    pending = s["unsent_count"] or 0
+    pct     = int(sent * 100 / total) if total else 0
+
+    daily_sent  = get_daily_sent()
+    daily_limit = get_daily_limit()
+    daily_pct   = int(daily_sent * 100 / daily_limit) if daily_limit else 0
 
     await query.message.edit_text(
-        f"📊 **Estatísticas**\n\n"
-        f"Total de leads: **{stats['total']}**\n"
-        f"✅ Enviados:    **{stats['sent_count']}**\n"
-        f"📧 Pendentes:  **{stats['unsent_count']}**",
+        "┌─────────────────────────────┐\n"
+        "│   📊  **Estatísticas**          │\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        "━━━━━━  Base de Leads  ━━━━━━\n"
+        f"👥  Total:      **{total:,}**\n"
+        f"✅  Enviados:   **{sent:,}**\n"
+        f"📧  Pendentes:  **{pending:,}**\n"
+        f"🏷️   Nichos:     **{s['niches']}** categorias\n"
+        f"`{_bar(pct)}` **{pct}%**\n"
+        "\n"
+        "━━━━━━  Hoje  ━━━━━━\n"
+        f"📬  Enviados hoje:  **{daily_sent}** / **{daily_limit}**\n"
+        f"`{_bar(daily_pct)}` **{daily_pct}%**",
         reply_markup=kb_back(),
     )
 
@@ -403,14 +500,22 @@ async def _show_daily(query: CallbackQuery):
     limit = get_daily_limit()
     queue = queue_length()
     pct   = int(sent * 100 / limit) if limit else 0
-    bar   = "█" * int(pct / 10) + "░" * (10 - int(pct / 10))
+
+    status = "🟢 Ativo" if sent < limit else "🔴 Limite atingido"
 
     await query.message.edit_text(
-        f"📬 **Envios de hoje**\n\n"
-        f"`{bar}` {pct}%\n"
-        f"Enviados:  **{sent}** / **{limit}**\n"
-        f"Na fila:   **{queue}**\n"
-        f"Restante:  **{max(0, limit - sent)}**",
+        "┌─────────────────────────────┐\n"
+        "│   📬  **Envios de Hoje**        │\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        f"Status:   {status}\n"
+        f"`{_bar(pct, 14)}` **{pct}%**\n"
+        "\n"
+        f"✉️   Enviados:   **{sent}** / **{limit}**\n"
+        f"⏳  Na fila:    **{queue}**\n"
+        f"🕐  Restante:   **{max(0, limit - sent)}**\n"
+        "\n"
+        "_Os emails são enviados em lotes aleatórios\nao longo do dia para evitar bloqueios._",
         reply_markup=kb_back(),
     )
 
@@ -422,16 +527,25 @@ async def _show_campaign_confirm(query: CallbackQuery):
 
     unsent = count_unsent()
     if unsent == 0:
-        await query.message.edit_text("📭 Não há leads pendentes.", reply_markup=kb_back())
+        await query.message.edit_text(
+            "📭  **Nenhum lead pendente.**\n\nTodos os leads já foram contactados.\nUse **Coletar Leads** para adicionar mais.",
+            reply_markup=kb_back(),
+        )
         return
 
     await query.message.edit_text(
-        f"📤 **Enviar Campanha**\n\n"
-        f"Há **{unsent}** leads aguardando.\n"
-        f"O envio ocorre em lotes de 100–300 por dia.",
+        "┌─────────────────────────────┐\n"
+        "│   📤  **Enviar Campanha**       │\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        f"📧  **{unsent:,}** leads aguardando envio\n"
+        f"📅  Limite diário: **100–300** emails\n"
+        f"⏱️   Envio em lotes com intervalos aleatórios\n"
+        "\n"
+        "> Confirme para adicionar todos à fila.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"✅ Enviar para {unsent} leads", callback_data="confirm_send")],
-            [InlineKeyboardButton("❌ Cancelar",                    callback_data="menu_main")],
+            [InlineKeyboardButton(f"✅  Confirmar — Enviar para {unsent:,} leads", callback_data="confirm_send")],
+            [InlineKeyboardButton("❌  Cancelar", callback_data="menu_main")],
         ]),
     )
 
@@ -442,15 +556,22 @@ async def _do_send_campaign(query: CallbackQuery):
 
     leads = get_unsent_leads(limit=500)
     if not leads:
-        await query.message.edit_text("📭 Não há leads para enviar.", reply_markup=kb_back())
+        await query.message.edit_text("📭  Não há leads para enviar.", reply_markup=kb_back())
         return
 
     lead_ids = [lead["id"] for lead in leads]
     enqueue_leads(lead_ids)
 
     await query.message.edit_text(
-        f"🚀 **{len(lead_ids)}** leads adicionados à fila!\n"
-        f"Envio automático em lotes (100–300/dia).",
+        "┌─────────────────────────────┐\n"
+        "│   🚀  **Campanha Iniciada!**    │\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        f"📨  **{len(lead_ids):,}** leads adicionados à fila\n"
+        f"📅  Envio: **100–300** por dia\n"
+        f"⏱️   Lotes automáticos com pausas aleatórias\n"
+        "\n"
+        "_Acompanhe o progresso em **Envios Hoje**._",
         reply_markup=kb_back(),
     )
 
@@ -466,16 +587,25 @@ async def _show_reset_confirm(query: CallbackQuery):
             count = cur.fetchone()[0]
 
     if count == 0:
-        await query.message.edit_text("ℹ️ Nenhum lead marcado como enviado.", reply_markup=kb_back())
+        await query.message.edit_text(
+            "ℹ️  **Nenhum lead enviado ainda.**",
+            reply_markup=kb_back(),
+        )
         return
 
     await query.message.edit_text(
-        f"⚠️ **Resetar envios?**\n\n"
-        f"**{count}** leads serão marcados como não enviados\n"
-        f"e poderão receber email novamente.",
+        "┌─────────────────────────────┐\n"
+        "│   🔄  **Resetar Enviados**      │\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        f"⚠️  **{count:,}** leads serão marcados como\n"
+        f"__não enviados__ e poderão receber email\n"
+        f"novamente na próxima campanha.\n"
+        "\n"
+        "> Esta ação não pode ser desfeita.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"⚠️ Confirmar reset de {count} leads", callback_data="confirm_reset_sent")],
-            [InlineKeyboardButton("❌ Cancelar",                           callback_data="menu_main")],
+            [InlineKeyboardButton(f"⚠️  Confirmar reset de {count:,} leads", callback_data="confirm_reset_sent")],
+            [InlineKeyboardButton("❌  Cancelar", callback_data="menu_main")],
         ]),
     )
 
@@ -493,6 +623,8 @@ async def _do_reset_sent(query: CallbackQuery):
     reset_daily_count()
 
     await query.message.edit_text(
-        f"✅ **{count}** leads resetados.\nContador diário zerado.",
+        f"✅  **Reset concluído!**\n\n"
+        f"**{count:,}** leads marcados como não enviados.\n"
+        f"Contador diário zerado.",
         reply_markup=kb_back(),
     )
