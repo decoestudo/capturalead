@@ -4,8 +4,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Telegram
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN        = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID")
+TELEGRAM_API_ID       = int(os.getenv("TELEGRAM_API_ID", "0"))
+TELEGRAM_API_HASH     = os.getenv("TELEGRAM_API_HASH", "")
 
 # SMTP
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.hostinger.com")

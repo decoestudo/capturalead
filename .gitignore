@@ -1,3 +1,7 @@
+# Sessão Pyrogram — NUNCA commitar
+*.session
+*.session-journal
+
 # Credenciais — NUNCA commitar
 .env
 .env.vps

@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 import sys
@@ -15,23 +16,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
-    # 1. Initialise database
+async def main():
+    # 1. Banco de dados
     logger.info("Initialising database...")
     from database.db import init_db
     init_db()
 
-    # 2. Start email queue worker
+    # 2. Fila de email (thread de background)
     logger.info("Starting email queue worker...")
     from worker_queue.email_queue import start_worker
     start_worker()
 
-    # 3. Start Telegram bot (blocking)
-    logger.info("Starting Telegram bot...")
-    from bot.telegram_bot import build_application
-    app = build_application()
-    app.run_polling(drop_pending_updates=True)
+    # 3. Bot Telegram (Pyrogram)
+    logger.info("Starting Telegram bot (Pyrogram)...")
+    from bot.telegram_bot import create_client, register_handlers
+    from pyrogram import idle
+
+    client = create_client()
+    register_handlers(client)
+
+    await client.start()
+    logger.info("Bot online! Aguardando mensagens...")
+    await idle()
+    await client.stop()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
