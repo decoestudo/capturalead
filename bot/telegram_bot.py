@@ -298,6 +298,8 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                 stop_event.set()
         return bool(inserted)
 
+    niche_results: dict[str, int] = {}
+
     async def receita_worker(niche):
         if stop_event.is_set():
             return
@@ -310,10 +312,10 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                 if await save_lead(c.get("company_name",""), c.get("email",""),
                                    "", c.get("phone",""), "receita_federal", niche):
                     count += 1
-            if count:
-                await client.send_message(chat_id, f"✅  **{niche}** — {count} leads encontrados")
+            niche_results[niche] = count
         except Exception as e:
             logger.error(f"[Receita] {niche}: {e}")
+            niche_results[niche] = 0
 
     async def casadosdados_worker(niche):
         if stop_event.is_set():
@@ -327,8 +329,7 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                 if await save_lead(c.get("company_name",""), c.get("email",""),
                                    c.get("website",""), "", "casadosdados_api", niche):
                     count += 1
-            if count:
-                await client.send_message(chat_id, f"✅  **{niche}** — {count} leads encontrados")
+            niche_results[niche] = niche_results.get(niche, 0) + count
         except Exception as e:
             logger.error(f"[CasaDados] {niche}: {e}")
 
@@ -352,8 +353,7 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                             break
                         await save_lead(c.get("company_name",""), email, website,
                                         c.get("phone",""), "google_maps_site", niche)
-            if count:
-                await client.send_message(chat_id, f"✅  **{niche}** — {count} leads encontrados")
+            niche_results[niche] = niche_results.get(niche, 0) + count
         except Exception as e:
             logger.error(f"[Maps] {niche}: {e}")
 
@@ -370,22 +370,24 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                     if await save_lead(c.get("company_name",""), email,
                                        c.get("website",""), c.get("phone",""), "bing_search", niche):
                         count += 1
-            if count:
-                await client.send_message(chat_id, f"✅  **{niche}** — {count} leads encontrados")
+            niche_results[niche] = niche_results.get(niche, 0) + count
         except Exception as e:
             logger.error(f"[Bing] {niche}: {e}")
 
-    await client.send_message(
+    progress_msg = await client.send_message(
         chat_id,
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🚀  **Coleta iniciada**\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🏷️   Nichos: **{len(NICHES)}** categorias\n"
-        f"🎯  Meta:   **{max_results}** leads\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━",
+        "┌─────────────────────────────┐\n"
+        "│   🚀  **Coleta em andamento...**  │\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        f"🏷️  Nichos: **{len(NICHES)}** categorias\n"
+        f"🎯  Meta:  **{max_results:,}** leads\n"
+        f"📥  Coletados: **0**\n"
+        "\n"
+        "_Aguarde, processando..._",
     )
 
-    for niche in NICHES:
+    for i, niche in enumerate(NICHES, 1):
         if stop_event.is_set():
             break
         if use_receita:
@@ -396,24 +398,72 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                 await maps_worker(niche)
             if not stop_event.is_set():
                 await bing_worker(niche)
+
+        # atualiza a mensagem de progresso
+        done = [n for n in NICHES[:i] if niche_results.get(n, 0) > 0]
+        pct = int(i * 100 / len(NICHES))
+        bar = _bar(pct, 14)
+        niches_txt = "\n".join(
+            f"  ✅  {n.capitalize()}: **{niche_results[n]:,}**"
+            for n in done
+        ) or "  _Nenhum resultado ainda_"
+        try:
+            await progress_msg.edit_text(
+                "┌─────────────────────────────┐\n"
+                "│   🚀  **Coleta em andamento...**  │\n"
+                "└─────────────────────────────┘\n"
+                "\n"
+                f"`{bar}` **{pct}%** ({i}/{len(NICHES)})\n"
+                f"📥  Coletados: **{total_new:,}** / **{max_results:,}**\n"
+                "\n"
+                f"{niches_txt}",
+            )
+        except Exception:
+            pass
+
         await asyncio.sleep(random.uniform(1, 3))
 
+    # ── resumo final ──────────────────────────────────────────────────────────
     from database.db import get_recent_leads
-    recent = get_recent_leads(limit=min(total_new, 10)) if total_new > 0 else []
+    s = _get_quick_stats()
+    base_total = s["total"] or 0
+    recent = get_recent_leads(limit=8) if total_new > 0 else []
 
-    lines = [
-        "━━━━━━━━━━━━━━━━━━━━━━━",
-        f"🏁  **Coleta concluída!**",
-        f"📥  **{total_new}** novos leads salvos",
-        "━━━━━━━━━━━━━━━━━━━━━━━",
-    ]
+    # por nicho com resultado
+    niche_lines = "\n".join(
+        f"  {'✅' if v > 0 else '⬜'}  {n.capitalize()}: **{v:,}**"
+        for n, v in niche_results.items()
+        if v > 0
+    )
+
+    # amostra de leads capturados
+    sample_lines = ""
     if recent:
-        lines.append("\n📋  **Últimos capturados:**")
+        sample_lines = "\n\n━━━━━━  Amostra  ━━━━━━\n"
         for lead in recent:
-            name = (lead["company_name"] or "N/A")[:28]
-            lines.append(f"  `{lead['email']}`\n  _{name}_")
+            name = (lead["company_name"] or "—")[:24].strip()
+            email = lead["email"]
+            sample_lines += f"▸ **{name}**\n  `{email}`\n"
 
-    await client.send_message(chat_id, "\n".join(lines), reply_markup=kb_main())
+    result_icon = "🏁" if not stop_event.is_set() else "⏹️"
+    status_text = "Coleta concluída!" if not stop_event.is_set() else "Coleta interrompida"
+
+    summary = (
+        "┌─────────────────────────────┐\n"
+        f"│  {result_icon}  **{status_text}**\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        f"✨  **+{total_new:,}** novos leads salvos\n"
+        f"👥  Base total: **{base_total:,}** leads\n"
+    )
+    if niche_lines:
+        summary += f"\n━━━━━━  Por categoria  ━━━━━━\n{niche_lines}"
+    summary += sample_lines
+
+    try:
+        await progress_msg.edit_text(summary, reply_markup=kb_main())
+    except Exception:
+        await client.send_message(chat_id, summary, reply_markup=kb_main())
 
 
 # ── ver leads ─────────────────────────────────────────────────────────────────
