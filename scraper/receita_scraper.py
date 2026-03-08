@@ -28,6 +28,7 @@ SKIP_EMAILS = [
 
 
 def _check_table_exists() -> bool:
+    """Retorna True só se a tabela existe E tem dados importados."""
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -37,6 +38,9 @@ def _check_table_exists() -> bool:
                         WHERE table_name = 'cnpj_estabelecimentos'
                     )
                 """)
+                if not cur.fetchone()[0]:
+                    return False
+                cur.execute("SELECT EXISTS (SELECT 1 FROM cnpj_estabelecimentos LIMIT 1)")
                 return cur.fetchone()[0]
     except Exception:
         return False
