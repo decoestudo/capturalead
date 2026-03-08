@@ -1,0 +1,32 @@
+# Credenciais — NUNCA commitar
+.env
+.env.vps
+cookies.txt
+cookies.txt.bak
+
+# Logs
+*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Playwright
+playwright-browsers/
+
+# Claude
+.claude/
+
+# Downloads temporários
+receita_federal/
+*.zip
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db

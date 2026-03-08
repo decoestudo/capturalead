@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: leads_db
+      POSTGRES_USER: leads_user
+      POSTGRES_PASSWORD: leads_pass
+    ports:
+      - "5434:5432"   # só para acesso local/debug — remover em produção se não precisar
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leads_user -d leads_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Sem expose de porta — evita conflito com Redis do TopAgenda na VPS
+    # Comunicação só interna entre containers via nome "leads_redis"
+    volumes:
+      - redisdata:/data
+
+  # Roda uma vez para baixar + importar dados da Receita Federal
+  # Uso: docker-compose run --rm importer
+  importer:
+    build: .
+    env_file: .env
+    command: python scripts/importar_receita.py
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - import
+
+volumes:
+  pgdata:
+  redisdata:
