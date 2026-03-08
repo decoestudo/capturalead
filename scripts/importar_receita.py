@@ -177,17 +177,27 @@ def import_estabelecimentos(session, conn, filename):
     BATCH = 5000
     total = 0
 
+    tmp_path = f"/tmp/{filename}"
+
     with session.get(url, stream=True, timeout=600) as resp:
         resp.raise_for_status()
         content_length = int(resp.headers.get("content-length", 0))
         log.info(f"  Tamanho: {content_length // 1024 // 1024} MB")
 
-        # Baixa em memória (zip não suporta streaming nativo)
-        log.info("  Recebendo arquivo...")
-        data = resp.content
-        log.info(f"  Recebido {len(data)//1024//1024} MB. Extraindo...")
+        downloaded = 0
+        last_pct = -1
+        with open(tmp_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=4 * 1024 * 1024):  # 4MB chunks
+                f.write(chunk)
+                downloaded += len(chunk)
+                if content_length:
+                    pct = downloaded * 100 // content_length
+                    if pct != last_pct and pct % 5 == 0:
+                        log.info(f"  Download: {pct}% ({downloaded//1024//1024}/{content_length//1024//1024} MB)")
+                        last_pct = pct
 
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
+    log.info(f"  Download concluído. Extraindo...")
+    with zipfile.ZipFile(tmp_path) as z:
         fname = z.namelist()[0]
         log.info(f"  Arquivo interno: {fname}")
         with z.open(fname) as f:
@@ -237,6 +247,10 @@ def import_estabelecimentos(session, conn, filename):
                     cur.executemany(INSERT_SQL, batch)
                     conn.commit()
                     total += len(batch)
+
+    # Remove arquivo temporário
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
 
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM cnpj_estabelecimentos")
