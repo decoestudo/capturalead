@@ -19,6 +19,15 @@ COUNTRY = "brasil"
 _awaiting_qty: set[int] = set()
 
 
+async def _edit(query: "CallbackQuery", text: str, **kwargs):
+    """Edita mensagem ignorando erro de conteúdo idêntico."""
+    try:
+        await _edit(query,text, **kwargs)
+    except Exception as e:
+        if "MESSAGE_NOT_MODIFIED" not in str(e):
+            raise
+
+
 # ── client ────────────────────────────────────────────────────────────────────
 
 def create_client() -> Client:
@@ -161,22 +170,19 @@ def register_handlers(client: Client):
 
         # ── menu principal ────────────────────────────────────────────────
         if data == "menu_main":
-            await query.message.edit_text(_main_menu_text(), reply_markup=kb_main())
+            await _edit(query, _main_menu_text(), reply_markup=kb_main())
 
         # ── coletar leads ─────────────────────────────────────────────────
         elif data == "menu_scrape":
-            from scraper.receita_scraper import _check_table_exists
-            fonte = "✅ Receita Federal 🇧🇷 (local)" if _check_table_exists() else "🌐 Casa dos Dados API"
-            await query.message.edit_text(
+            await _edit(query,
                 "┌─────────────────────────────┐\n"
                 "│   🔍  **Coletar Leads**         │\n"
                 "└─────────────────────────────┘\n"
                 "\n"
-                f"📡  **Fonte:**  {fonte}\n"
-                f"🏷️  **Nichos:**  8 categorias\n"
-                f"🌎  **País:**    Brasil\n"
+                "Selecione a quantidade de leads\n"
+                "que deseja coletar:\n"
                 "\n"
-                "━━━━  Quantos leads?  ━━━━",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                 reply_markup=kb_quantity(),
             )
 
@@ -184,7 +190,7 @@ def register_handlers(client: Client):
             val = data[4:]
             if val == "custom":
                 _awaiting_qty.add(query.message.chat.id)
-                await query.message.edit_text(
+                await _edit(query,
                     "✏️  **Digite a quantidade desejada:**\n"
                     "__Ex: 300, 1000, 5000__\n\n"
                     "> A coleta para quando atingir o número informado.",
@@ -194,7 +200,7 @@ def register_handlers(client: Client):
                 )
             else:
                 qty = int(val)
-                await query.message.edit_text(
+                await _edit(query,
                     f"⏳  **Iniciando coleta de {qty} leads...**\n\n"
                     f"Acompanhe as atualizações abaixo.\n"
                     f"__Não é necessário aguardar — o bot avisa quando terminar.__"
@@ -299,7 +305,7 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                                    "", c.get("phone",""), "receita_federal", niche):
                     count += 1
             if count:
-                await client.send_message(chat_id, f"  ✅  **{niche}** → {count} leads salvos")
+                await client.send_message(chat_id, f"✅  **{niche}** — {count} leads encontrados")
         except Exception as e:
             logger.error(f"[Receita] {niche}: {e}")
 
@@ -316,7 +322,7 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                                    c.get("website",""), "", "casadosdados_api", niche):
                     count += 1
             if count:
-                await client.send_message(chat_id, f"  ✅  **{niche}** → {count} leads salvos")
+                await client.send_message(chat_id, f"✅  **{niche}** — {count} leads encontrados")
         except Exception as e:
             logger.error(f"[CasaDados] {niche}: {e}")
 
@@ -341,7 +347,7 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                         await save_lead(c.get("company_name",""), email, website,
                                         c.get("phone",""), "google_maps_site", niche)
             if count:
-                await client.send_message(chat_id, f"  ✅  Maps **{niche}** → {count} leads")
+                await client.send_message(chat_id, f"✅  **{niche}** — {count} leads encontrados")
         except Exception as e:
             logger.error(f"[Maps] {niche}: {e}")
 
@@ -359,17 +365,15 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
                                        c.get("website",""), c.get("phone",""), "bing_search", niche):
                         count += 1
             if count:
-                await client.send_message(chat_id, f"  ✅  Bing **{niche}** → {count} leads")
+                await client.send_message(chat_id, f"✅  **{niche}** — {count} leads encontrados")
         except Exception as e:
             logger.error(f"[Bing] {niche}: {e}")
 
-    fonte = "Receita Federal 🇧🇷" if use_receita else "Casa dos Dados API"
     await client.send_message(
         chat_id,
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🚀  **Coleta iniciada**\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📡  Fonte:  **{fonte}**\n"
         f"🏷️   Nichos: **{len(NICHES)}** categorias\n"
         f"🎯  Meta:   **{max_results}** leads\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━",
@@ -417,7 +421,7 @@ async def _show_leads_page(query: CallbackQuery, page: int):
     leads = leads[:limit]
 
     if not leads:
-        await query.message.edit_text(
+        await _edit(query,
             "📭  **Nenhum lead encontrado.**\n\nUse **Coletar Leads** para começar.",
             reply_markup=kb_back(),
         )
@@ -437,7 +441,7 @@ async def _show_leads_page(query: CallbackQuery, page: int):
         if i < len(leads):
             lines.append("─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─")
 
-    await query.message.edit_text(
+    await _edit(query,
         "\n".join(lines),
         reply_markup=kb_leads_nav(page, has_more),
     )
@@ -472,7 +476,7 @@ async def _show_stats(query: CallbackQuery):
     daily_limit = get_daily_limit()
     daily_pct   = int(daily_sent * 100 / daily_limit) if daily_limit else 0
 
-    await query.message.edit_text(
+    await _edit(query,
         "┌─────────────────────────────┐\n"
         "│   📊  **Estatísticas**          │\n"
         "└─────────────────────────────┘\n"
@@ -503,7 +507,7 @@ async def _show_daily(query: CallbackQuery):
 
     status = "🟢 Ativo" if sent < limit else "🔴 Limite atingido"
 
-    await query.message.edit_text(
+    await _edit(query,
         "┌─────────────────────────────┐\n"
         "│   📬  **Envios de Hoje**        │\n"
         "└─────────────────────────────┘\n"
@@ -527,13 +531,13 @@ async def _show_campaign_confirm(query: CallbackQuery):
 
     unsent = count_unsent()
     if unsent == 0:
-        await query.message.edit_text(
+        await _edit(query,
             "📭  **Nenhum lead pendente.**\n\nTodos os leads já foram contactados.\nUse **Coletar Leads** para adicionar mais.",
             reply_markup=kb_back(),
         )
         return
 
-    await query.message.edit_text(
+    await _edit(query,
         "┌─────────────────────────────┐\n"
         "│   📤  **Enviar Campanha**       │\n"
         "└─────────────────────────────┘\n"
@@ -556,13 +560,13 @@ async def _do_send_campaign(query: CallbackQuery):
 
     leads = get_unsent_leads(limit=500)
     if not leads:
-        await query.message.edit_text("📭  Não há leads para enviar.", reply_markup=kb_back())
+        await _edit(query,"📭  Não há leads para enviar.", reply_markup=kb_back())
         return
 
     lead_ids = [lead["id"] for lead in leads]
     enqueue_leads(lead_ids)
 
-    await query.message.edit_text(
+    await _edit(query,
         "┌─────────────────────────────┐\n"
         "│   🚀  **Campanha Iniciada!**    │\n"
         "└─────────────────────────────┘\n"
@@ -587,13 +591,13 @@ async def _show_reset_confirm(query: CallbackQuery):
             count = cur.fetchone()[0]
 
     if count == 0:
-        await query.message.edit_text(
+        await _edit(query,
             "ℹ️  **Nenhum lead enviado ainda.**",
             reply_markup=kb_back(),
         )
         return
 
-    await query.message.edit_text(
+    await _edit(query,
         "┌─────────────────────────────┐\n"
         "│   🔄  **Resetar Enviados**      │\n"
         "└─────────────────────────────┘\n"
@@ -622,7 +626,7 @@ async def _do_reset_sent(query: CallbackQuery):
 
     reset_daily_count()
 
-    await query.message.edit_text(
+    await _edit(query,
         f"✅  **Reset concluído!**\n\n"
         f"**{count:,}** leads marcados como não enviados.\n"
         f"Contador diário zerado.",
