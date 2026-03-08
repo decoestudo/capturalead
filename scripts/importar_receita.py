@@ -181,26 +181,32 @@ def import_estabelecimentos(session, filename):
     BATCH = 5000
     total = 0
 
-    tmp_path = f"/tmp/{filename}"
+    os.makedirs("/tmp/receita", exist_ok=True)
+    tmp_path = f"/tmp/receita/{filename}"
 
-    with session.get(url, stream=True, timeout=600) as resp:
-        resp.raise_for_status()
-        content_length = int(resp.headers.get("content-length", 0))
-        log.info(f"  Tamanho: {content_length // 1024 // 1024} MB")
+    if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+        log.info(f"  Arquivo já existe em {tmp_path}, pulando download.")
+    else:
+        with session.get(url, stream=True, timeout=600) as resp:
+            resp.raise_for_status()
+            content_length = int(resp.headers.get("content-length", 0))
+            log.info(f"  Tamanho: {content_length // 1024 // 1024} MB")
 
-        downloaded = 0
-        last_pct = -1
-        with open(tmp_path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=4 * 1024 * 1024):  # 4MB chunks
-                f.write(chunk)
-                downloaded += len(chunk)
-                if content_length:
-                    pct = downloaded * 100 // content_length
-                    if pct != last_pct and pct % 5 == 0:
-                        log.info(f"  Download: {pct}% ({downloaded//1024//1024}/{content_length//1024//1024} MB)")
-                        last_pct = pct
+            downloaded = 0
+            last_pct = -1
+            with open(tmp_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=4 * 1024 * 1024):  # 4MB chunks
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if content_length:
+                        pct = downloaded * 100 // content_length
+                        if pct != last_pct and pct % 5 == 0:
+                            log.info(f"  Download: {pct}% ({downloaded//1024//1024}/{content_length//1024//1024} MB)")
+                            last_pct = pct
 
-    log.info(f"  Download concluído. Extraindo...")
+        log.info(f"  Download concluído.")
+
+    log.info(f"  Extraindo...")
 
     # Abre conexão FRESCA para o INSERT (após o download longo)
     conn = get_conn()

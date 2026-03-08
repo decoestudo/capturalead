@@ -49,7 +49,10 @@ services:
         condition: service_healthy
     profiles:
       - import
+    volumes:
+      - receita_tmp:/tmp/receita
 
 volumes:
   pgdata:
   redisdata:
+  receita_tmp:
