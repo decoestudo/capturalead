@@ -28,7 +28,7 @@ def send_email(to: str, subject: str, html_body: str | None = None,
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = EMAIL_FROM
+    msg["From"] = f"Top Agenda <{EMAIL_FROM}>"
     msg["To"] = to
 
     msg.attach(MIMEText(html_body, "html", "utf-8"))

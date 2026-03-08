@@ -21,14 +21,16 @@ DAILY_COUNT_KEY = "email_daily_count"   # Redis key: email_daily_count:YYYY-MM-D
 DAILY_LIMIT_KEY = "email_daily_limit"   # Redis key: email_daily_limit:YYYY-MM-DD
 
 EMAIL_SUBJECTS = [
-    "Sua barbearia ainda agenda pelo WhatsApp?",
-    "Enquanto você corta cabelo, clientes estão tentando marcar",
+    "Seu negócio ainda agenda pelo WhatsApp?",
+    "Enquanto você atende, clientes estão tentando marcar horário",
     "3 motivos pelos quais você perde clientes sem perceber",
-    "Acabou o horário marcado que não apareceu — veja como",
-    "Seu concorrente já automatizou. E você?",
-    "Agenda cheia todo dia — sem responder WhatsApp",
+    "Acabou o horário marcado que não apareceu — veja como evitar",
+    "Seu concorrente já automatizou a agenda. E você?",
+    "Agenda cheia todo dia — sem responder mensagem",
     "Chega de cliente faltando sem avisar",
-    "Como salões estão lotando a agenda no piloto automático",
+    "Como negócios de serviço estão lotando a agenda no piloto automático",
+    "Você ainda gerencia sua agenda manualmente?",
+    "Automatize sua agenda e foque no que importa",
 ]
 
 _stop_event = threading.Event()
