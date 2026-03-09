@@ -73,6 +73,13 @@ def _get_quick_stats() -> dict:
 # ── teclados ──────────────────────────────────────────────────────────────────
 
 def kb_main():
+    from worker_queue.email_queue import is_paused
+    paused = is_paused()
+    pause_btn = (
+        InlineKeyboardButton("▶️  Retomar Envios", callback_data="menu_resume")
+        if paused else
+        InlineKeyboardButton("⏸  Pausar Envios",  callback_data="menu_pause")
+    )
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔍  Coletar Leads",   callback_data="menu_scrape"),
@@ -92,6 +99,7 @@ def kb_main():
         [
             InlineKeyboardButton("📡  Monitor Campanhas", callback_data="menu_monitor"),
         ],
+        [pause_btn],
         [
             InlineKeyboardButton("🔃  Atualizar",          callback_data="menu_main"),
             InlineKeyboardButton("🧪  Email Teste",        callback_data="menu_test_email"),
@@ -248,6 +256,12 @@ def register_handlers(client: Client):
 
         elif data == "menu_monitor":
             await _show_monitor(query)
+
+        elif data == "menu_pause":
+            await _do_pause(query)
+
+        elif data == "menu_resume":
+            await _do_resume(query)
 
     @client.on_message(filters.text & filters.private & ~filters.command(["start"]))
     async def on_text(_, message: Message):
@@ -782,5 +796,39 @@ async def _do_reset_daily_limit(query: CallbackQuery):
         f"📊  Faixa configurada: **{MAILER_DAILY_MIN} – {MAILER_DAILY_MAX}**\n\n"
         "_O contador de envios foi zerado.\n"
         "Os leads já enviados continuam marcados._",
+        reply_markup=kb_back(),
+    )
+
+
+# ── pausar / retomar envios ───────────────────────────────────────────────────
+
+async def _do_pause(query: CallbackQuery):
+    from worker_queue.email_queue import set_paused, queue_length
+
+    set_paused(True)
+    na_fila = queue_length()
+
+    await _edit(query,
+        "⏸  **Envios pausados!**\n\n"
+        f"📨  Emails na fila: **{na_fila}**\n\n"
+        "_O worker vai terminar o lote atual (se houver) e parar.\n"
+        "Clique em **Retomar Envios** quando quiser continuar._",
+        reply_markup=kb_back(),
+    )
+
+
+async def _do_resume(query: CallbackQuery):
+    from worker_queue.email_queue import set_paused, queue_length, get_daily_sent, get_daily_limit
+
+    set_paused(False)
+    na_fila  = queue_length()
+    enviados = get_daily_sent()
+    limite   = get_daily_limit()
+
+    await _edit(query,
+        "▶️  **Envios retomados!**\n\n"
+        f"📨  Emails na fila: **{na_fila}**\n"
+        f"📅  Enviados hoje: **{enviados}/{limite}**\n\n"
+        "_O worker retoma automaticamente em até 30 segundos._",
         reply_markup=kb_back(),
     )

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY        = "email_queue"
 DAILY_COUNT_KEY  = "email_daily_count"
 DAILY_LIMIT_KEY  = "email_daily_limit"
+PAUSED_KEY       = "email_paused"
 
 _stop_event = threading.Event()
 
@@ -78,6 +79,20 @@ def reset_daily_count():
     r.delete(_daily_key(DAILY_COUNT_KEY))
     r.delete(_daily_key(DAILY_LIMIT_KEY))
     logger.info("Contador diário resetado.")
+
+
+def is_paused() -> bool:
+    return get_redis().exists(PAUSED_KEY) == 1
+
+
+def set_paused(paused: bool):
+    r = get_redis()
+    if paused:
+        r.set(PAUSED_KEY, "1")
+        logger.info("Envios pausados.")
+    else:
+        r.delete(PAUSED_KEY)
+        logger.info("Envios retomados.")
 
 
 def _process_batch():
@@ -140,6 +155,9 @@ def worker_loop():
     logger.info("Email queue worker started.")
     while not _stop_event.is_set():
         try:
+            if is_paused():
+                _stop_event.wait(timeout=30)
+                continue
             if daily_limit_reached():
                 _stop_event.wait(timeout=600)
                 continue
