@@ -14,10 +14,10 @@ services:
       - .:/app
     networks:
       - internal
-      - topagenda
+      - shared-net
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=topagenda"
+      - "traefik.docker.network=shared-net"
       - "traefik.http.routers.leadtrack.rule=Host(`track.topagenda.online`)"
       - "traefik.http.routers.leadtrack.entrypoints=websecure"
       - "traefik.http.routers.leadtrack.tls.certresolver=letsencryptresolver"
@@ -74,5 +74,5 @@ volumes:
 networks:
   internal:
     driver: bridge
-  topagenda:
+  shared-net:
     external: true
