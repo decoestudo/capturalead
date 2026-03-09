@@ -3,7 +3,6 @@ import io
 import logging
 import sys
 
-# Força UTF-8 no stdout para suportar emojis no Windows
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
@@ -17,17 +16,19 @@ logger = logging.getLogger(__name__)
 
 
 async def main():
-    # 1. Banco de dados
     logger.info("Initialising database...")
     from database.db import init_db
     init_db()
 
-    # 2. Fila de email (thread de background)
     logger.info("Starting email queue worker...")
     from worker_queue.email_queue import start_worker
     start_worker()
 
-    # 3. Bot Telegram (Pyrogram)
+    logger.info("Starting tracking server...")
+    from tracking.server import start_tracking_server
+    from config.settings import TRACKING_PORT
+    await start_tracking_server(port=TRACKING_PORT)
+
     logger.info("Starting Telegram bot (Pyrogram)...")
     from bot.telegram_bot import create_client, register_handlers
     from pyrogram import idle

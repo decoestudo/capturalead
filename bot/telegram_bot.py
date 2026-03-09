@@ -87,10 +87,11 @@ def kb_main():
             InlineKeyboardButton("🔄  Resetar Enviados",callback_data="menu_reset"),
         ],
         [
-            InlineKeyboardButton("🔃  Atualizar",       callback_data="menu_main"),
+            InlineKeyboardButton("📡  Monitor Campanhas", callback_data="menu_monitor"),
         ],
         [
-            InlineKeyboardButton("🧪  Enviar Email Teste", callback_data="menu_test_email"),
+            InlineKeyboardButton("🔃  Atualizar",          callback_data="menu_main"),
+            InlineKeyboardButton("🧪  Email Teste",        callback_data="menu_test_email"),
         ],
     ])
 
@@ -239,6 +240,9 @@ def register_handlers(client: Client):
         elif data == "menu_test_email":
             await _send_test_email(query)
 
+        elif data == "menu_monitor":
+            await _show_monitor(query)
+
     @client.on_message(filters.text & filters.private & ~filters.command(["start"]))
     async def on_text(_, message: Message):
         chat_id = message.chat.id
@@ -273,14 +277,11 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
     from config.settings import NICHES
     from scraper.receita_scraper import scrape_receita, _check_table_exists
     from scraper.casadosdados_scraper import scrape_casadosdados
-    from scraper.google_maps_scraper import scrape_google_maps, scrape_bing_emails
-    from scraper.email_extractor import extract_emails
     from database.db import insert_lead
 
     use_receita = _check_table_exists()
     total_new   = 0
     stop_event  = asyncio.Event()
-    seen_websites: set = set()
 
     async def save_lead(company_name, email, website, phone, source, niche) -> bool:
         nonlocal total_new
@@ -333,46 +334,6 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
         except Exception as e:
             logger.error(f"[CasaDados] {niche}: {e}")
 
-    async def maps_worker(niche):
-        if stop_event.is_set():
-            return
-        try:
-            companies = await scrape_google_maps(niche, COUNTRY, max_results=max_results, seen_websites=seen_websites)
-            count = 0
-            for c in companies:
-                if stop_event.is_set():
-                    break
-                for email in c.get("direct_emails", []):
-                    if await save_lead(c.get("company_name",""), email,
-                                       c.get("website",""), c.get("phone",""), "google_maps", niche):
-                        count += 1
-                website = c.get("website")
-                if website and not stop_event.is_set():
-                    for email in await asyncio.to_thread(extract_emails, website):
-                        if stop_event.is_set():
-                            break
-                        await save_lead(c.get("company_name",""), email, website,
-                                        c.get("phone",""), "google_maps_site", niche)
-            niche_results[niche] = niche_results.get(niche, 0) + count
-        except Exception as e:
-            logger.error(f"[Maps] {niche}: {e}")
-
-    async def bing_worker(niche):
-        if stop_event.is_set():
-            return
-        try:
-            companies = await scrape_bing_emails(niche, COUNTRY, max_results=max_results)
-            count = 0
-            for c in companies:
-                if stop_event.is_set():
-                    break
-                for email in c.get("direct_emails", []):
-                    if await save_lead(c.get("company_name",""), email,
-                                       c.get("website",""), c.get("phone",""), "bing_search", niche):
-                        count += 1
-            niche_results[niche] = niche_results.get(niche, 0) + count
-        except Exception as e:
-            logger.error(f"[Bing] {niche}: {e}")
 
     progress_msg = await client.send_message(
         chat_id,
@@ -394,10 +355,6 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
             await receita_worker(niche)
         else:
             await casadosdados_worker(niche)
-            if not stop_event.is_set():
-                await maps_worker(niche)
-            if not stop_event.is_set():
-                await bing_worker(niche)
 
         # atualiza a mensagem de progresso
         done = [n for n in NICHES[:i] if niche_results.get(n, 0) > 0]
@@ -672,10 +629,10 @@ async def _show_reset_confirm(query: CallbackQuery):
 
 async def _send_test_email(query: CallbackQuery):
     from mailer.smtp_sender import send_email
-    from worker_queue.email_queue import EMAIL_SUBJECTS
+    from mailer.templates import SUBJECTS
 
     TEST_EMAIL = "decopt10@gmail.com"
-    subject = random.choice(EMAIL_SUBJECTS)
+    subject = random.choice(SUBJECTS)
 
     await _edit(query,
         "⏳  **Enviando email de teste...**\n\n"
@@ -688,6 +645,7 @@ async def _send_test_email(query: CallbackQuery):
         to=TEST_EMAIL,
         subject=subject,
         company_name="TopAgenda Teste",
+        template_id=random.randint(1, 20),
     )
 
     if success:
@@ -704,6 +662,55 @@ async def _send_test_email(query: CallbackQuery):
             "Verifique as configurações de SMTP nos logs.",
             reply_markup=kb_back(),
         )
+
+
+async def _show_monitor(query: CallbackQuery):
+    from database.db import get_email_stats, get_template_stats
+
+    s = get_email_stats()
+    total   = s["total"]   or 0
+    sent    = s["sent"]    or 0
+    opened  = s["opened"]  or 0
+    clicked = s["clicked"] or 0
+
+    open_rate    = round(opened  * 100 / sent, 1) if sent  else 0
+    click_rate   = round(clicked * 100 / sent, 1) if sent  else 0
+    click_on_open = round(clicked * 100 / opened, 1) if opened else 0
+
+    # Top 5 templates por taxa de abertura
+    templates = get_template_stats()
+    top_lines = ""
+    for t in templates[:5]:
+        tid  = t["template_id"]
+        env  = t["enviados"] or 0
+        ab   = t["abertos"]  or 0
+        cl   = t["clicados"] or 0
+        pct  = round(ab * 100 / env, 1) if env else 0
+        top_lines += f"  📧 Template **#{tid}** — {env} env · {ab} aber ({pct}%) · {cl} cliques\n"
+
+    if not top_lines:
+        top_lines = "  _Nenhum dado ainda_\n"
+
+    await _edit(query,
+        "┌─────────────────────────────┐\n"
+        "│   📡  **Monitor de Campanhas**  │\n"
+        "└─────────────────────────────┘\n"
+        "\n"
+        "━━━━━━  Visão Geral  ━━━━━━\n"
+        f"📨  Total enviado:    **{sent:,}**\n"
+        f"👁️   Aberturas:       **{opened:,}** ({open_rate}%)\n"
+        f"🖱️   Cliques:         **{clicked:,}** ({click_rate}%)\n"
+        f"🎯  Clique/Abertura:  **{click_on_open}%**\n"
+        "\n"
+        "━━━━━━  Top Templates  ━━━━━━\n"
+        f"{top_lines}"
+        "\n"
+        "_Atualizado em tempo real._",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄  Atualizar", callback_data="menu_monitor")],
+            [InlineKeyboardButton("◀️  Voltar",    callback_data="menu_main")],
+        ]),
+    )
 
 
 async def _do_reset_sent(query: CallbackQuery):

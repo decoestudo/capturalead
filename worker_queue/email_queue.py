@@ -13,25 +13,13 @@ from config.settings import (
     MAILER_DAILY_MIN,
     MAILER_DAILY_MAX,
 )
+from mailer.templates import SUBJECTS
 
 logger = logging.getLogger(__name__)
 
-QUEUE_KEY = "email_queue"
-DAILY_COUNT_KEY = "email_daily_count"   # Redis key: email_daily_count:YYYY-MM-DD
-DAILY_LIMIT_KEY = "email_daily_limit"   # Redis key: email_daily_limit:YYYY-MM-DD
-
-EMAIL_SUBJECTS = [
-    "Seu negócio ainda agenda pelo WhatsApp?",
-    "Enquanto você atende, clientes estão tentando marcar horário",
-    "3 motivos pelos quais você perde clientes sem perceber",
-    "Acabou o horário marcado que não apareceu — veja como evitar",
-    "Seu concorrente já automatizou a agenda. E você?",
-    "Agenda cheia todo dia — sem responder mensagem",
-    "Chega de cliente faltando sem avisar",
-    "Como negócios de serviço estão lotando a agenda no piloto automático",
-    "Você ainda gerencia sua agenda manualmente?",
-    "Automatize sua agenda e foque no que importa",
-]
+QUEUE_KEY        = "email_queue"
+DAILY_COUNT_KEY  = "email_daily_count"
+DAILY_LIMIT_KEY  = "email_daily_limit"
 
 _stop_event = threading.Event()
 
@@ -45,13 +33,12 @@ def _daily_key(suffix: str) -> str:
 
 
 def get_daily_limit() -> int:
-    """Retorna o limite do dia (sorteia uma vez por dia e persiste no Redis)."""
     r = get_redis()
     key = _daily_key(DAILY_LIMIT_KEY)
     val = r.get(key)
     if val is None:
         limit = random.randint(MAILER_DAILY_MIN, MAILER_DAILY_MAX)
-        r.setex(key, 86400, limit)  # expira em 24h
+        r.setex(key, 86400, limit)
         logger.info(f"Limite diário sorteado: {limit} emails")
         return limit
     return int(val)
@@ -75,7 +62,6 @@ def daily_limit_reached() -> bool:
 
 
 def enqueue_leads(lead_ids: list[int]):
-    """Push lead IDs onto the Redis queue."""
     r = get_redis()
     for lead_id in lead_ids:
         r.rpush(QUEUE_KEY, str(lead_id))
@@ -88,7 +74,6 @@ def queue_length() -> int:
 
 
 def reset_daily_count():
-    """Zera o contador diário (para testes ou reset manual)."""
     r = get_redis()
     r.delete(_daily_key(DAILY_COUNT_KEY))
     r.delete(_daily_key(DAILY_LIMIT_KEY))
@@ -96,8 +81,7 @@ def reset_daily_count():
 
 
 def _process_batch():
-    """Dequeue a random-sized batch and send emails, respecting daily limit."""
-    from database.db import mark_sent, get_connection
+    from database.db import record_sent, get_connection
     from mailer.smtp_sender import send_email
     import psycopg2
     from psycopg2.extras import RealDictCursor
@@ -134,14 +118,17 @@ def _process_batch():
 
     sent_count = 0
     for lead in leads:
-        subject = random.choice(EMAIL_SUBJECTS)
+        template_id = random.randint(1, 20)
+        subject     = random.choice(SUBJECTS)
         success = send_email(
             to=lead["email"],
             subject=subject,
             company_name=lead.get("company_name", ""),
+            template_id=template_id,
+            lead_id=lead["id"],
         )
         if success:
-            mark_sent(lead["id"])
+            record_sent(lead["id"], template_id, subject)
             sent_count += 1
 
     if sent_count:
@@ -150,15 +137,12 @@ def _process_batch():
 
 
 def worker_loop():
-    """Background worker that processes the queue continuously."""
     logger.info("Email queue worker started.")
     while not _stop_event.is_set():
         try:
             if daily_limit_reached():
-                # Aguarda até meia-noite verificando a cada 10 min
                 _stop_event.wait(timeout=600)
                 continue
-
             if queue_length() > 0:
                 _process_batch()
                 wait_minutes = random.uniform(MAILER_MIN_WAIT_MINUTES, MAILER_MAX_WAIT_MINUTES)

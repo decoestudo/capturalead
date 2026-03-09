@@ -40,9 +40,13 @@ NICHES = [
 # Delays (seconds)
 SCRAPER_MIN_DELAY = 2
 SCRAPER_MAX_DELAY = 5
-MAILER_MIN_BATCH_SIZE = 1
-MAILER_MAX_BATCH_SIZE = 5
-MAILER_MIN_WAIT_MINUTES = 1
-MAILER_MAX_WAIT_MINUTES = 5
-MAILER_DAILY_MIN = 100   # mínimo de envios por dia
-MAILER_DAILY_MAX = 300   # máximo de envios por dia
+MAILER_MIN_BATCH_SIZE   = int(os.getenv("MAILER_MIN_BATCH_SIZE",   "1"))
+MAILER_MAX_BATCH_SIZE   = int(os.getenv("MAILER_MAX_BATCH_SIZE",   "5"))
+MAILER_MIN_WAIT_MINUTES = float(os.getenv("MAILER_MIN_WAIT_MINUTES", "1"))
+MAILER_MAX_WAIT_MINUTES = float(os.getenv("MAILER_MAX_WAIT_MINUTES", "5"))
+MAILER_DAILY_MIN        = int(os.getenv("MAILER_DAILY_MIN", "100"))   # mínimo de envios por dia
+MAILER_DAILY_MAX        = int(os.getenv("MAILER_DAILY_MAX", "300"))   # máximo de envios por dia
+
+# Tracking
+TRACKING_BASE_URL = os.getenv("TRACKING_BASE_URL", "")  # Ex: https://yourserver.com:8080
+TRACKING_PORT     = int(os.getenv("TRACKING_PORT", "8080"))

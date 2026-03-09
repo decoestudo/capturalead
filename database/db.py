@@ -16,9 +16,52 @@ CREATE TABLE IF NOT EXISTS leads (
     niche TEXT,
     country TEXT,
     collected_at TIMESTAMP DEFAULT NOW(),
-    sent BOOLEAN DEFAULT FALSE
+    sent BOOLEAN DEFAULT FALSE,
+    score INTEGER,
+    template_id INTEGER,
+    subject TEXT,
+    opened_at TIMESTAMP,
+    clicked_at TIMESTAMP
 );
 """
+
+DOMAIN_SCORES: dict[str, int] = {
+    "gmail.com":        90,
+    "outlook.com":      85,
+    "hotmail.com":      75,
+    "yahoo.com.br":     65,
+    "yahoo.com":        65,
+    "icloud.com":       60,
+    "me.com":           60,
+    "live.com":         60,
+    "globo.com":        50,
+    "oi.com.br":        45,
+    "terra.com.br":     35,
+    "uol.com.br":       35,
+    "ig.com.br":        30,
+    "bol.com.br":       30,
+    "brturbo.com.br":   25,
+    "pop.com.br":       25,
+    "click21.com.br":   25,
+    "cpovo.net":        25,
+    "hipernet.com.br":  25,
+    "superig.com.br":   25,
+    "oknet.com.br":     25,
+    "multynet.com.br":  25,
+    "litoral.com.br":   25,
+    "netpar.com.br":    25,
+    "dialdata.com.br":  25,
+    "onda.com.br":      25,
+    "directnet.com.br": 25,
+    "wciconsultoria.com.br": 25,
+}
+
+
+def score_email(email: str) -> int:
+    if not email or "@" not in email:
+        return 0
+    domain = email.split("@")[1].lower()
+    return DOMAIN_SCORES.get(domain, 100)
 
 
 def get_connection():
@@ -26,10 +69,29 @@ def get_connection():
 
 
 def init_db():
-    """Create tables if they don't exist."""
+    """Create tables and apply migrations if needed."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(CREATE_TABLE_SQL)
+            # Migrations para bases existentes
+            for col, definition in [
+                ("score",       "INTEGER"),
+                ("template_id", "INTEGER"),
+                ("subject",     "TEXT"),
+                ("opened_at",   "TIMESTAMP"),
+                ("clicked_at",  "TIMESTAMP"),
+            ]:
+                cur.execute(f"ALTER TABLE leads ADD COLUMN IF NOT EXISTS {col} {definition};")
+            # Pontua leads antigos sem score
+            cur.execute("SELECT id, email FROM leads WHERE score IS NULL")
+            rows = cur.fetchall()
+            if rows:
+                for lead_id, email in rows:
+                    cur.execute(
+                        "UPDATE leads SET score = %s WHERE id = %s",
+                        (score_email(email or ""), lead_id),
+                    )
+                logger.info(f"Score calculado para {len(rows)} leads existentes.")
         conn.commit()
     logger.info("Database initialized.")
 
@@ -44,7 +106,6 @@ def email_exists(email: str) -> bool:
 def insert_lead(company_name: str, email: str, website: str = None,
                 phone: str = None, source: str = None,
                 niche: str = None, country: str = None) -> bool:
-    """Insert a lead. Returns True if inserted, False if duplicate."""
     if email_exists(email):
         return False
     try:
@@ -52,10 +113,10 @@ def insert_lead(company_name: str, email: str, website: str = None,
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO leads (company_name, email, website, phone, source, niche, country)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO leads (company_name, email, website, phone, source, niche, country, score)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (company_name, email, website, phone, source, niche, country),
+                    (company_name, email, website, phone, source, niche, country, score_email(email)),
                 )
             conn.commit()
         return True
@@ -63,18 +124,89 @@ def insert_lead(company_name: str, email: str, website: str = None,
         return False
 
 
+def record_sent(lead_id: int, template_id: int, subject: str):
+    """Registra qual template e assunto foram usados no envio."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE leads SET sent = TRUE, template_id = %s, subject = %s WHERE id = %s",
+                (template_id, subject, lead_id),
+            )
+        conn.commit()
+
+
+def record_open(lead_id: int):
+    """Registra abertura do email (apenas a primeira vez)."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE leads SET opened_at = NOW() WHERE id = %s AND opened_at IS NULL",
+                (lead_id,),
+            )
+        conn.commit()
+
+
+def record_click(lead_id: int):
+    """Registra clique no link (apenas o primeiro)."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE leads SET clicked_at = NOW() WHERE id = %s AND clicked_at IS NULL",
+                (lead_id,),
+            )
+        conn.commit()
+
+
+def get_email_stats() -> dict:
+    """Retorna estatísticas gerais de abertura e clique."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*)                                             AS total,
+                    SUM(CASE WHEN sent        THEN 1 ELSE 0 END)        AS sent,
+                    SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) AS opened,
+                    SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) AS clicked
+                FROM leads
+            """)
+            return dict(cur.fetchone())
+
+
+def get_template_stats() -> list[dict]:
+    """Retorna performance por template (abertura e clique)."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    template_id,
+                    COUNT(*)                                               AS enviados,
+                    SUM(CASE WHEN opened_at  IS NOT NULL THEN 1 ELSE 0 END) AS abertos,
+                    SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END) AS clicados
+                FROM leads
+                WHERE template_id IS NOT NULL
+                GROUP BY template_id
+                ORDER BY
+                    ROUND(SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*),0), 1) DESC
+            """)
+            return [dict(r) for r in cur.fetchall()]
+
+
 def get_unsent_leads(limit: int = 100):
-    """Return leads not yet sent."""
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                "SELECT * FROM leads WHERE sent = FALSE LIMIT %s", (limit,)
+                """
+                SELECT * FROM leads
+                WHERE sent = FALSE
+                ORDER BY score DESC NULLS LAST
+                LIMIT %s
+                """,
+                (limit,),
             )
             return cur.fetchall()
 
 
 def get_recent_leads(limit: int = 20, offset: int = 0):
-    """Return recently collected leads for display."""
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(

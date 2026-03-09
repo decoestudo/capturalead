@@ -12,6 +12,16 @@ services:
         condition: service_started
     volumes:
       - .:/app
+    networks:
+      - internal
+      - topagenda
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=topagenda"
+      - "traefik.http.routers.leadtrack.rule=Host(`track.topagenda.online`)"
+      - "traefik.http.routers.leadtrack.entrypoints=websecure"
+      - "traefik.http.routers.leadtrack.tls.certresolver=letsencryptresolver"
+      - "traefik.http.services.leadtrack.loadbalancer.server.port=8080"
 
   postgres:
     image: postgres:15
@@ -29,14 +39,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - internal
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # Sem expose de porta — evita conflito com Redis do TopAgenda na VPS
-    # Comunicação só interna entre containers via nome "leads_redis"
     volumes:
       - redisdata:/data
+    networks:
+      - internal
 
   # Roda uma vez para baixar + importar dados da Receita Federal
   # Uso: docker-compose run --rm importer
@@ -51,8 +63,16 @@ services:
       - import
     volumes:
       - receita_tmp:/tmp/receita
+    networks:
+      - internal
 
 volumes:
   pgdata:
   redisdata:
   receita_tmp:
+
+networks:
+  internal:
+    driver: bridge
+  topagenda:
+    external: true
