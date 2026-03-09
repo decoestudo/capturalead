@@ -87,6 +87,9 @@ def kb_main():
             InlineKeyboardButton("🔄  Resetar Enviados",callback_data="menu_reset"),
         ],
         [
+            InlineKeyboardButton("🔁  Novo Limite Diário", callback_data="menu_reset_limit"),
+        ],
+        [
             InlineKeyboardButton("📡  Monitor Campanhas", callback_data="menu_monitor"),
         ],
         [
@@ -239,6 +242,9 @@ def register_handlers(client: Client):
 
         elif data == "menu_test_email":
             await _send_test_email(query)
+
+        elif data == "menu_reset_limit":
+            await _do_reset_daily_limit(query)
 
         elif data == "menu_monitor":
             await _show_monitor(query)
@@ -729,5 +735,23 @@ async def _do_reset_sent(query: CallbackQuery):
         f"✅  **Reset concluído!**\n\n"
         f"**{count:,}** leads marcados como não enviados.\n"
         f"Contador diário zerado.",
+        reply_markup=kb_back(),
+    )
+
+
+async def _do_reset_daily_limit(query: CallbackQuery):
+    """Zera apenas o limite diário do Redis — sorteia novo valor pelo .env."""
+    from worker_queue.email_queue import reset_daily_count, get_daily_limit
+    from config.settings import MAILER_DAILY_MIN, MAILER_DAILY_MAX
+
+    reset_daily_count()
+    new_limit = get_daily_limit()  # sorteia e persiste novo valor
+
+    await _edit(query,
+        "✅  **Novo limite diário sorteado!**\n\n"
+        f"📅  Limite hoje: **{new_limit}** emails\n"
+        f"📊  Faixa configurada: **{MAILER_DAILY_MIN} – {MAILER_DAILY_MAX}**\n\n"
+        "_O contador de envios foi zerado.\n"
+        "Os leads já enviados continuam marcados._",
         reply_markup=kb_back(),
     )
