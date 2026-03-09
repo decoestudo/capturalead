@@ -3,6 +3,7 @@ Busca leads diretamente na tabela cnpj_estabelecimentos (dados da Receita Federa
 Zero custo, zero rate limit, zero dependência de API externa.
 """
 import logging
+import random
 from database.db import get_connection
 
 logger = logging.getLogger(__name__)
@@ -47,10 +48,11 @@ def _check_table_exists() -> bool:
 
 
 def scrape_receita(niche: str, country: str, max_results: int = 100,
-                   offset: int = 0) -> list[dict]:
+                   offset: int | None = None) -> list[dict]:
     """
     Busca empresas ativas com email na tabela local da Receita Federal.
     Muito mais rápido que qualquer API — consulta direta no PostgreSQL.
+    Se offset=None, escolhe um offset aleatório dentro do total disponível.
     """
     if not _check_table_exists():
         logger.warning("[Receita] Tabela cnpj_estabelecimentos não existe. "
@@ -68,6 +70,21 @@ def scrape_receita(niche: str, country: str, max_results: int = 100,
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                # Descobre o total disponível para escolher offset aleatório
+                if offset is None:
+                    cur.execute("""
+                        SELECT COUNT(*) FROM cnpj_estabelecimentos e
+                        WHERE e.cnae_fiscal_principal = ANY(%s)
+                          AND e.situacao_cadastral = '02'
+                          AND e.email IS NOT NULL
+                          AND e.email != ''
+                    """, (cnaes,))
+                    total = cur.fetchone()[0]
+                    # Garante que ainda sobram registros suficientes após o offset
+                    max_offset = max(0, total - max_results * 3)
+                    offset = random.randint(0, max_offset) if max_offset > 0 else 0
+                    logger.info(f"[Receita] '{niche}': {total} registros disponíveis, offset aleatório={offset}")
+
                 cur.execute("""
                     SELECT
                         e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj,

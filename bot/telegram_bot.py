@@ -279,6 +279,23 @@ def register_handlers(client: Client):
 
 # ── scraping task ─────────────────────────────────────────────────────────────
 
+def _allocate_budget(total: int, niches: list[str]) -> dict[str, int]:
+    """Distribui aleatoriamente o total de emails entre os nichos."""
+    shuffled = niches[:]
+    random.shuffle(shuffled)
+    weights = [random.randint(1, 10) for _ in shuffled]
+    total_w = sum(weights)
+    budget: dict[str, int] = {}
+    remaining = total
+    for i, niche in enumerate(shuffled[:-1]):
+        alloc = max(1, round(weights[i] / total_w * total))
+        alloc = min(alloc, remaining - (len(shuffled) - i - 1))
+        budget[niche] = alloc
+        remaining -= alloc
+    budget[shuffled[-1]] = max(1, remaining)
+    return budget
+
+
 async def _scraping_task(client: Client, chat_id: int, max_results: int):
     from config.settings import NICHES
     from scraper.receita_scraper import scrape_receita, _check_table_exists
@@ -288,6 +305,10 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
     use_receita = _check_table_exists()
     total_new   = 0
     stop_event  = asyncio.Event()
+
+    # Distribui o orçamento aleatoriamente entre nichos
+    budget = _allocate_budget(max_results, NICHES)
+    niches_ordered = list(budget.keys())  # já embaralhado
 
     async def save_lead(company_name, email, website, phone, source, niche) -> bool:
         nonlocal total_new
@@ -307,11 +328,11 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
 
     niche_results: dict[str, int] = {}
 
-    async def receita_worker(niche):
+    async def receita_worker(niche, quota):
         if stop_event.is_set():
             return
         try:
-            companies = await asyncio.to_thread(scrape_receita, niche, COUNTRY, max_results)
+            companies = await asyncio.to_thread(scrape_receita, niche, COUNTRY, quota)
             count = 0
             for c in companies:
                 if stop_event.is_set():
@@ -324,11 +345,11 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
             logger.error(f"[Receita] {niche}: {e}")
             niche_results[niche] = 0
 
-    async def casadosdados_worker(niche):
+    async def casadosdados_worker(niche, quota):
         if stop_event.is_set():
             return
         try:
-            companies = await asyncio.to_thread(scrape_casadosdados, niche, COUNTRY, max_results)
+            companies = await asyncio.to_thread(scrape_casadosdados, niche, COUNTRY, quota)
             count = 0
             for c in companies:
                 if stop_event.is_set():
@@ -340,46 +361,50 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
         except Exception as e:
             logger.error(f"[CasaDados] {niche}: {e}")
 
-
+    # Mostra a distribuição sorteada
+    budget_txt = "\n".join(
+        f"  🎲  {n.capitalize()}: **{q}** emails"
+        for n, q in budget.items()
+    )
     progress_msg = await client.send_message(
         chat_id,
         "┌─────────────────────────────┐\n"
         "│   🚀  **Coleta em andamento...**  │\n"
         "└─────────────────────────────┘\n"
         "\n"
-        f"🏷️  Nichos: **{len(NICHES)}** categorias\n"
-        f"🎯  Meta:  **{max_results:,}** leads\n"
+        f"🎯  Meta:  **{max_results:,}** emails\n"
         f"📥  Coletados: **0**\n"
         "\n"
-        "_Aguarde, processando..._",
+        "━━━━━━  Distribuição  ━━━━━━\n"
+        f"{budget_txt}",
     )
 
-    for i, niche in enumerate(NICHES, 1):
+    for i, niche in enumerate(niches_ordered, 1):
         if stop_event.is_set():
             break
+        quota = budget[niche]
         if use_receita:
-            await receita_worker(niche)
+            await receita_worker(niche, quota)
         else:
-            await casadosdados_worker(niche)
+            await casadosdados_worker(niche, quota)
 
-        # atualiza a mensagem de progresso
-        done = [n for n in NICHES[:i] if niche_results.get(n, 0) > 0]
-        pct = int(i * 100 / len(NICHES))
-        bar = _bar(pct, 14)
-        niches_txt = "\n".join(
+        # atualiza progresso
+        done_txt = "\n".join(
             f"  ✅  {n.capitalize()}: **{niche_results[n]:,}**"
-            for n in done
-        ) or "  _Nenhum resultado ainda_"
+            for n in niches_ordered[:i]
+            if niche_results.get(n, 0) > 0
+        ) or "  _Processando..._"
+        pct = int(i * 100 / len(niches_ordered))
         try:
             await progress_msg.edit_text(
                 "┌─────────────────────────────┐\n"
                 "│   🚀  **Coleta em andamento...**  │\n"
                 "└─────────────────────────────┘\n"
                 "\n"
-                f"`{bar}` **{pct}%** ({i}/{len(NICHES)})\n"
+                f"`{_bar(pct, 14)}` **{pct}%** ({i}/{len(niches_ordered)})\n"
                 f"📥  Coletados: **{total_new:,}** / **{max_results:,}**\n"
                 "\n"
-                f"{niches_txt}",
+                f"{done_txt}",
             )
         except Exception:
             pass
