@@ -600,9 +600,13 @@ async def _show_campaign_confirm(query: CallbackQuery):
 
 async def _do_send_campaign(query: CallbackQuery):
     from database.db import get_unsent_leads
-    from worker_queue.email_queue import enqueue_leads
+    from worker_queue.email_queue import enqueue_leads, get_redis, QUEUE_KEY
 
-    leads = get_unsent_leads(limit=500)
+    # Limpa fila existente para evitar duplicatas ao re-enfileirar
+    r = get_redis()
+    r.delete(QUEUE_KEY)
+
+    leads = get_unsent_leads(limit=10_000)  # pega todos os não enviados
     if not leads:
         await _edit(query,"📭  Não há leads para enviar.", reply_markup=kb_back())
         return
