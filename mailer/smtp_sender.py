@@ -1,3 +1,4 @@
+import re
 import smtplib
 import logging
 from email.mime.multipart import MIMEMultipart
@@ -6,11 +7,27 @@ from config.settings import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FR
 
 logger = logging.getLogger(__name__)
 
+UNSUBSCRIBE_URL = "https://topagenda.online/unsubscribe"
+
+
+def _html_to_text(html: str) -> str:
+    """Converte HTML para texto puro simples (para MIME multipart/alternative)."""
+    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+    text = re.sub(r"</p>|</tr>|</div>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"&lt;", "<", text)
+    text = re.sub(r"&gt;", ">", text)
+    text = re.sub(r" {2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
 
 def send_email(to: str, subject: str, company_name: str = "",
                template_id: int = 1, lead_id: int = None) -> bool:
     """
-    Renderiza e envia um email HTML.
+    Renderiza e envia um email HTML com versão texto puro.
     Injeta pixel de rastreamento e link de clique se TRACKING_BASE_URL estiver configurado.
     """
     from mailer.templates import render_template
@@ -24,11 +41,15 @@ def send_email(to: str, subject: str, company_name: str = "",
         tracking_pixel_url=pixel_url,
         click_url=click_url,
     )
+    text_body = _html_to_text(html_body)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = f"Top Agenda <{EMAIL_FROM}>"
     msg["To"] = to
+    msg["List-Unsubscribe"] = f"<{UNSUBSCRIBE_URL}>"
+    msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     try:
