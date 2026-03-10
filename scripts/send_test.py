@@ -15,9 +15,9 @@ from config.settings import TRACKING_BASE_URL
 from database.db import get_connection, insert_lead, record_sent
 from mailer.smtp_sender import send_email
 
-TEST_EMAIL   = "decopt10@gmail.com"
-TEST_COMPANY = "Teste Rastreamento"
-SUBJECT      = "TopAgenda — teste de rastreamento de abertura"
+TEST_EMAIL   = "test-wf01qan5l@srv1.mail-tester.com"
+TEST_COMPANY = "Salão Exemplo"
+SUBJECT      = "Sua agenda ainda depende de você?"
 
 
 def get_or_create_lead() -> int:
