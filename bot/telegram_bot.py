@@ -714,47 +714,95 @@ async def _send_test_email(query: CallbackQuery):
 
 
 async def _show_monitor(query: CallbackQuery):
-    from database.db import get_email_stats, get_template_stats
+    from database.db import get_email_stats, get_template_stats, get_domain_stats
+    from worker_queue.email_queue import get_daily_sent, get_daily_limit, queue_length, is_paused
 
-    s = get_email_stats()
-    total   = s["total"]   or 0
+    s       = get_email_stats()
     sent    = s["sent"]    or 0
     opened  = s["opened"]  or 0
     clicked = s["clicked"] or 0
 
-    open_rate    = round(opened  * 100 / sent, 1) if sent  else 0
-    click_rate   = round(clicked * 100 / sent, 1) if sent  else 0
-    click_on_open = round(clicked * 100 / opened, 1) if opened else 0
+    open_rate     = round(opened  * 100 / sent,   1) if sent   else 0.0
+    click_rate    = round(clicked * 100 / sent,   1) if sent   else 0.0
+    click_on_open = round(clicked * 100 / opened, 1) if opened else 0.0
 
-    # Top 5 templates por taxa de abertura
+    daily_sent  = get_daily_sent()
+    daily_limit = get_daily_limit()
+    daily_pct   = int(daily_sent * 100 / daily_limit) if daily_limit else 0
+    na_fila     = queue_length()
+    paused      = is_paused()
+
     templates = get_template_stats()
-    top_lines = ""
-    for t in templates[:5]:
-        tid  = t["template_id"]
-        env  = t["enviados"] or 0
-        ab   = t["abertos"]  or 0
-        cl   = t["clicados"] or 0
-        pct  = round(ab * 100 / env, 1) if env else 0
-        top_lines += f"  📧 Template **#{tid}** — {env} env · {ab} aber ({pct}%) · {cl} cliques\n"
+    domains   = get_domain_stats()
 
-    if not top_lines:
-        top_lines = "  _Nenhum dado ainda_\n"
+    if paused:
+        status = "⏸  Pausado"
+    elif daily_sent >= daily_limit:
+        status = "🔴  Limite diário atingido"
+    else:
+        status = "🟢  Enviando"
 
-    await _edit(query,
-        "┌─────────────────────────────┐\n"
-        "│   📡  **Monitor de Campanhas**  │\n"
-        "└─────────────────────────────┘\n"
+    # ── Seção 1 — cabeçalho + hoje ──────────────────────────────────────────
+    txt = (
+        "📡  **Monitor de Campanhas**\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "\n"
-        "━━━━━━  Visão Geral  ━━━━━━\n"
-        f"📨  Total enviado:    **{sent:,}**\n"
-        f"👁️   Aberturas:       **{opened:,}** ({open_rate}%)\n"
-        f"🖱️   Cliques:         **{clicked:,}** ({click_rate}%)\n"
-        f"🎯  Clique/Abertura:  **{click_on_open}%**\n"
+        f"**📅  Hoje** — {status}\n"
+        f"`{_bar(daily_pct, 16)}`  **{daily_pct}%**\n"
+        f"📨  **{daily_sent:,}** / **{daily_limit:,}**  enviados"
+        f"   ·   ⏳ **{na_fila:,}** na fila\n"
+    )
+
+    # ── Seção 2 — funil ─────────────────────────────────────────────────────
+    txt += (
         "\n"
-        "━━━━━━  Top Templates  ━━━━━━\n"
-        f"{top_lines}"
-        "\n"
-        "_Atualizado em tempo real._",
+        "**📊  Funil de Conversão**\n"
+        f"┌ 📨  Enviados  ▸  **{sent:,}**\n"
+        f"├ 👁   Abertos   ▸  **{opened:,}**  `{_bar(int(open_rate), 10)}`  **{open_rate}%**\n"
+        f"└ 🖱   Clicados  ▸  **{clicked:,}**  `{_bar(int(click_rate), 10)}`  **{click_rate}%**\n"
+        f"\n"
+        f"🎯  Quem abriu e clicou: **{click_on_open}%**\n"
+    )
+
+    # ── Seção 3 — top templates ──────────────────────────────────────────────
+    medals = {0: "🥇", 1: "🥈", 2: "🥉"}
+    txt += "\n**🏆  Top Templates** _(por abertura)_\n"
+    if templates:
+        for i, t in enumerate(templates[:5]):
+            tid = t["template_id"] or "?"
+            env = t["enviados"]  or 0
+            ab  = t["abertos"]   or 0
+            cl  = t["clicados"]  or 0
+            pct = round(ab * 100 / env, 1) if env else 0.0
+            icon = medals.get(i, "  ▸")
+            txt += (
+                f"{icon}  T#{tid:02d}  `{_bar(int(pct), 9)}`  **{pct}%**\n"
+                f"      {env:,} env  ·  {ab} ab  ·  {cl} cli\n"
+            )
+    else:
+        txt += "_Nenhum dado disponível_\n"
+
+    # ── Seção 4 — provedores ─────────────────────────────────────────────────
+    txt += "\n**📮  Por Provedor**\n"
+    if domains:
+        for d in domains[:7]:
+            dom   = (d["domain"] or "outros")[:22]
+            env_d = d["enviados"]  or 0
+            ab_d  = d["abertos"]   or 0
+            cl_d  = d["clicados"]  or 0
+            pct_d = round(ab_d * 100 / env_d, 1) if env_d else 0.0
+            ab_icon = "👁" if ab_d > 0 else "·"
+            cl_icon = "🖱" if cl_d > 0 else "·"
+            txt += (
+                f"▸  `{dom:<22}`\n"
+                f"    {env_d:,} env  {ab_icon} {ab_d} ab ({pct_d}%)  {cl_icon} {cl_d} cli\n"
+            )
+    else:
+        txt += "_Nenhum dado disponível_\n"
+
+    txt += "\n_Atualizado em tempo real._"
+
+    await _edit(query, txt,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄  Atualizar", callback_data="menu_monitor")],
             [InlineKeyboardButton("◀️  Voltar",    callback_data="menu_main")],

@@ -2,6 +2,7 @@ import logging
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from config.settings import DATABASE_URL
+from utils.email_cleaner import clean_email
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,9 @@ def email_exists(email: str) -> bool:
 def insert_lead(company_name: str, email: str, website: str = None,
                 phone: str = None, source: str = None,
                 niche: str = None, country: str = None) -> bool:
+    email = clean_email(email)
+    if not email or "@" not in email:
+        return False
     if email_exists(email):
         return False
     try:
@@ -170,6 +174,25 @@ def get_email_stats() -> dict:
                 FROM leads
             """)
             return dict(cur.fetchone())
+
+
+def get_domain_stats() -> list[dict]:
+    """Retorna performance por domínio de email (top 8 por volume enviado)."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    SPLIT_PART(email, '@', 2)                                AS domain,
+                    COUNT(*)                                                  AS enviados,
+                    SUM(CASE WHEN opened_at  IS NOT NULL THEN 1 ELSE 0 END)  AS abertos,
+                    SUM(CASE WHEN clicked_at IS NOT NULL THEN 1 ELSE 0 END)  AS clicados
+                FROM leads
+                WHERE sent = TRUE
+                GROUP BY domain
+                ORDER BY enviados DESC
+                LIMIT 8
+            """)
+            return [dict(r) for r in cur.fetchall()]
 
 
 def get_template_stats() -> list[dict]:

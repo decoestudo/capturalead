@@ -100,7 +100,7 @@ def scrape_receita(niche: str, country: str, max_results: int = 100,
                       AND e.situacao_cadastral = '02'
                       AND e.email IS NOT NULL
                       AND e.email != ''
-                    ORDER BY e.id
+                    ORDER BY e.data_inicio_atividade DESC NULLS LAST
                     LIMIT %s OFFSET %s
                 """, (cnaes, max_results * 3, offset))  # pede 3x para compensar filtros
 

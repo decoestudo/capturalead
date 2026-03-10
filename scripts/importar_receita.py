@@ -122,6 +122,8 @@ def create_indexes(conn):
                 WHERE email IS NOT NULL AND email != '';
             CREATE INDEX IF NOT EXISTS idx_estab_cnae_situacao
                 ON cnpj_estabelecimentos (cnae_fiscal_principal, situacao_cadastral);
+            CREATE INDEX IF NOT EXISTS idx_estab_data_inicio
+                ON cnpj_estabelecimentos (data_inicio_atividade DESC);
         """)
         conn.commit()
     log.info("Índices criados.")
