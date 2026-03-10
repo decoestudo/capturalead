@@ -16,6 +16,7 @@ services:
         delay: 10s
       labels:
         - "traefik.enable=true"
+        - "traefik.docker.network=topagenda"
         - "traefik.http.routers.leadtrack.rule=Host(`track.topagenda.online`)"
         - "traefik.http.routers.leadtrack.entrypoints=websecure"
         - "traefik.http.routers.leadtrack.tls.certresolver=letsencryptresolver"
