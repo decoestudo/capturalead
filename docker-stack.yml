@@ -16,11 +16,12 @@ services:
         delay: 10s
       labels:
         - "traefik.enable=true"
-        - "traefik.docker.network=shared-net"
         - "traefik.http.routers.leadtrack.rule=Host(`track.topagenda.online`)"
         - "traefik.http.routers.leadtrack.entrypoints=websecure"
         - "traefik.http.routers.leadtrack.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.leadtrack.service=leadtrack"
         - "traefik.http.services.leadtrack.loadbalancer.server.port=8080"
+        - "traefik.http.services.leadtrack.loadbalancer.passHostHeader=true"
 
   postgres:
     image: postgres:15
