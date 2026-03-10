@@ -3,7 +3,6 @@ Busca leads diretamente na tabela cnpj_estabelecimentos (dados da Receita Federa
 Zero custo, zero rate limit, zero dependência de API externa.
 """
 import logging
-import random
 from database.db import get_connection
 
 logger = logging.getLogger(__name__)
@@ -47,12 +46,11 @@ def _check_table_exists() -> bool:
         return False
 
 
-def scrape_receita(niche: str, country: str, max_results: int = 100,
-                   offset: int | None = None) -> list[dict]:
+def scrape_receita(niche: str, country: str, max_results: int = 100) -> list[dict]:
     """
     Busca empresas ativas com email na tabela local da Receita Federal.
-    Muito mais rápido que qualquer API — consulta direta no PostgreSQL.
-    Se offset=None, escolhe um offset aleatório dentro do total disponível.
+    Sempre prioriza as mais recentes (data_inicio_atividade DESC) e pula
+    emails que já estão na tabela leads (evita duplicatas e avança automaticamente).
     """
     if not _check_table_exists():
         logger.warning("[Receita] Tabela cnpj_estabelecimentos não existe. "
@@ -70,21 +68,6 @@ def scrape_receita(niche: str, country: str, max_results: int = 100,
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                # Descobre o total disponível para escolher offset aleatório
-                if offset is None:
-                    cur.execute("""
-                        SELECT COUNT(*) FROM cnpj_estabelecimentos e
-                        WHERE e.cnae_fiscal_principal = ANY(%s)
-                          AND e.situacao_cadastral = '02'
-                          AND e.email IS NOT NULL
-                          AND e.email != ''
-                    """, (cnaes,))
-                    total = cur.fetchone()[0]
-                    # Garante que ainda sobram registros suficientes após o offset
-                    max_offset = max(0, total - max_results * 3)
-                    offset = random.randint(0, max_offset) if max_offset > 0 else 0
-                    logger.info(f"[Receita] '{niche}': {total} registros disponíveis, offset aleatório={offset}")
-
                 cur.execute("""
                     SELECT
                         e.cnpj_basico || e.cnpj_ordem || e.cnpj_dv AS cnpj,
@@ -96,13 +79,16 @@ def scrape_receita(niche: str, country: str, max_results: int = 100,
                         COALESCE(m.nome, e.municipio_cod) AS municipio
                     FROM cnpj_estabelecimentos e
                     LEFT JOIN cnpj_municipios m ON m.codigo = e.municipio_cod
+                    LEFT JOIN leads l ON LOWER(l.email) = LOWER(e.email)
                     WHERE e.cnae_fiscal_principal = ANY(%s)
                       AND e.situacao_cadastral = '02'
                       AND e.email IS NOT NULL
                       AND e.email != ''
+                      AND l.email IS NULL
                     ORDER BY e.data_inicio_atividade DESC NULLS LAST
-                    LIMIT %s OFFSET %s
-                """, (cnaes, max_results * 3, offset))  # pede 3x para compensar filtros
+                    LIMIT %s
+                """, (cnaes, max_results * 3))  # pede 3x para compensar filtros
+                logger.info(f"[Receita] '{niche}': buscando {max_results} leads mais recentes não coletados")
 
                 rows = cur.fetchall()
 
