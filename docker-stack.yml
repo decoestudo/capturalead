@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  app:
+    image: capturalead-app:latest
+    env_file: .env
+    volumes:
+      - /opt/capturalead:/app
+    networks:
+      - internal
+      - shared-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=shared-net"
+        - "traefik.http.routers.leadtrack.rule=Host(`track.topagenda.online`)"
+        - "traefik.http.routers.leadtrack.entrypoints=websecure"
+        - "traefik.http.routers.leadtrack.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.leadtrack.loadbalancer.server.port=8080"
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: leads_db
+      POSTGRES_USER: leads_user
+      POSTGRES_PASSWORD: leads_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  internal:
+    driver: overlay
+    attachable: true
+  shared-net:
+    external: true
