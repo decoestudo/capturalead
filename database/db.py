@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS leads (
     template_id INTEGER,
     subject TEXT,
     opened_at TIMESTAMP,
-    clicked_at TIMESTAMP
+    clicked_at TIMESTAMP,
+    open_device TEXT,
+    click_device TEXT
 );
 """
 
@@ -76,11 +78,13 @@ def init_db():
             cur.execute(CREATE_TABLE_SQL)
             # Migrations para bases existentes
             for col, definition in [
-                ("score",       "INTEGER"),
-                ("template_id", "INTEGER"),
-                ("subject",     "TEXT"),
-                ("opened_at",   "TIMESTAMP"),
-                ("clicked_at",  "TIMESTAMP"),
+                ("score",        "INTEGER"),
+                ("template_id",  "INTEGER"),
+                ("subject",      "TEXT"),
+                ("opened_at",    "TIMESTAMP"),
+                ("clicked_at",   "TIMESTAMP"),
+                ("open_device",  "TEXT"),
+                ("click_device", "TEXT"),
             ]:
                 cur.execute(f"ALTER TABLE leads ADD COLUMN IF NOT EXISTS {col} {definition};")
             # Pontua leads antigos sem score
@@ -139,24 +143,24 @@ def record_sent(lead_id: int, template_id: int, subject: str):
         conn.commit()
 
 
-def record_open(lead_id: int):
+def record_open(lead_id: int, device: str = None):
     """Registra abertura do email (apenas a primeira vez)."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE leads SET opened_at = NOW() WHERE id = %s AND opened_at IS NULL",
-                (lead_id,),
+                "UPDATE leads SET opened_at = NOW(), open_device = %s WHERE id = %s AND opened_at IS NULL",
+                (device, lead_id),
             )
         conn.commit()
 
 
-def record_click(lead_id: int):
+def record_click(lead_id: int, device: str = None):
     """Registra clique no link (apenas o primeiro)."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE leads SET clicked_at = NOW() WHERE id = %s AND clicked_at IS NULL",
-                (lead_id,),
+                "UPDATE leads SET clicked_at = NOW(), click_device = %s WHERE id = %s AND clicked_at IS NULL",
+                (device, lead_id),
             )
         conn.commit()
 
@@ -212,6 +216,21 @@ def get_template_stats() -> list[dict]:
                     ROUND(SUM(CASE WHEN opened_at IS NOT NULL THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*),0), 1) DESC
             """)
             return [dict(r) for r in cur.fetchall()]
+
+
+def get_device_stats() -> dict:
+    """Retorna contagem de dispositivos por abertura e clique."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT
+                    SUM(CASE WHEN open_device  = 'mobile'  THEN 1 ELSE 0 END) AS open_mobile,
+                    SUM(CASE WHEN open_device  = 'desktop' THEN 1 ELSE 0 END) AS open_desktop,
+                    SUM(CASE WHEN click_device = 'mobile'  THEN 1 ELSE 0 END) AS click_mobile,
+                    SUM(CASE WHEN click_device = 'desktop' THEN 1 ELSE 0 END) AS click_desktop
+                FROM leads
+            """)
+            return dict(cur.fetchone())
 
 
 def get_unsent_leads(limit: int = 100):

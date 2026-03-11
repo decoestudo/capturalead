@@ -714,13 +714,14 @@ async def _send_test_email(query: CallbackQuery):
 
 
 async def _show_monitor(query: CallbackQuery):
-    from database.db import get_email_stats, get_template_stats, get_domain_stats
+    from database.db import get_email_stats, get_template_stats, get_domain_stats, get_device_stats
     from worker_queue.email_queue import get_daily_sent, get_daily_limit, queue_length, is_paused
 
     s       = get_email_stats()
     sent    = s["sent"]    or 0
     opened  = s["opened"]  or 0
     clicked = s["clicked"] or 0
+    devices = get_device_stats()
 
     open_rate     = round(opened  * 100 / sent,   1) if sent   else 0.0
     click_rate    = round(clicked * 100 / sent,   1) if sent   else 0.0
@@ -799,6 +800,24 @@ async def _show_monitor(query: CallbackQuery):
             )
     else:
         txt += "_Nenhum dado disponível_\n"
+
+    # ── Seção 5 — dispositivos ───────────────────────────────────────────────
+    open_mob  = devices.get("open_mobile",   0) or 0
+    open_desk = devices.get("open_desktop",  0) or 0
+    clk_mob   = devices.get("click_mobile",  0) or 0
+    clk_desk  = devices.get("click_desktop", 0) or 0
+    open_total = open_mob + open_desk
+    clk_total  = clk_mob  + clk_desk
+    open_mob_pct  = round(open_mob  * 100 / open_total, 1) if open_total else 0.0
+    open_desk_pct = round(open_desk * 100 / open_total, 1) if open_total else 0.0
+    clk_mob_pct   = round(clk_mob   * 100 / clk_total,  1) if clk_total  else 0.0
+    clk_desk_pct  = round(clk_desk  * 100 / clk_total,  1) if clk_total  else 0.0
+
+    txt += (
+        "\n**📱  Dispositivos**\n"
+        f"_Aberturas:_  📱 **{open_mob}** ({open_mob_pct}%)  🖥 **{open_desk}** ({open_desk_pct}%)\n"
+        f"_Cliques:_    📱 **{clk_mob}** ({clk_mob_pct}%)  🖥 **{clk_desk}** ({clk_desk_pct}%)\n"
+    )
 
     txt += "\n_Atualizado em tempo real._"
 

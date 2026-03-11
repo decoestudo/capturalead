@@ -19,11 +19,19 @@ _PIXEL = (
 TOPAGENDA_URL = "https://topagenda.online"
 
 
+def _detect_device(user_agent: str) -> str:
+    ua = (user_agent or "").lower()
+    if any(k in ua for k in ("android", "iphone", "ipad", "mobile", "blackberry", "windows phone")):
+        return "mobile"
+    return "desktop"
+
+
 async def handle_open(request: web.Request) -> web.Response:
     try:
         lead_id = int(request.match_info["lead_id"])
-        record_open(lead_id)
-        logger.debug(f"[Track] Abertura: lead_id={lead_id}")
+        device = _detect_device(request.headers.get("User-Agent", ""))
+        record_open(lead_id, device)
+        logger.debug(f"[Track] Abertura: lead_id={lead_id} device={device}")
     except Exception:
         pass
     return web.Response(body=_PIXEL, content_type="image/gif",
@@ -33,8 +41,9 @@ async def handle_open(request: web.Request) -> web.Response:
 async def handle_click(request: web.Request) -> web.Response:
     try:
         lead_id = int(request.match_info["lead_id"])
-        record_click(lead_id)
-        logger.debug(f"[Track] Clique: lead_id={lead_id}")
+        device = _detect_device(request.headers.get("User-Agent", ""))
+        record_click(lead_id, device)
+        logger.debug(f"[Track] Clique: lead_id={lead_id} device={device}")
     except Exception:
         pass
     raise web.HTTPFound(location=TOPAGENDA_URL)
