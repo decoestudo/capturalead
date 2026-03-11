@@ -112,7 +112,7 @@ def scrape_receita(niche: str, country: str, max_results: int = 100) -> list[dic
             location = f"{municipio}/{uf}" if municipio and uf else (uf or country)
 
             results.append({
-                "company_name": nome_fantasia or f"CNPJ {cnpj}",
+                "company_name": nome_fantasia or "",
                 "email": email,
                 "website": "",
                 "phone": phone,

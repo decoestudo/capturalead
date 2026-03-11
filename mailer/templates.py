@@ -21,7 +21,7 @@ SUBJECTS = [
     "Seus clientes marcam com o concorrente porque é mais fácil",
     "Nunca mais perca um cliente por falta de disponibilidade",
     "A agenda que trabalha enquanto você descansa",
-    "Teste grátis: 7 dias para ver a diferença",
+    "Teste grátis: para ver a diferença na sua agenda",
     "Reduza faltas e aumente o faturamento — veja como",
     "Seu negócio merece uma agenda profissional",
 ]
@@ -312,7 +312,6 @@ def render_template(
     cta      = v["cta"]
     testimonial = v["testimonial"]
 
-    company_line = f"<p style='margin:0 0 8px;font-size:13px;font-weight:700;color:{accent};letter-spacing:2px;text-transform:uppercase;'>Para: {company_name}</p>" if company_name else ""
 
     pain_rows = "".join(
         f"""<tr>
@@ -356,7 +355,6 @@ def render_template(
           <!-- HERO -->
           <tr>
             <td style="background:linear-gradient(160deg,{bg1} 0%,{bg2} 100%);border-radius:20px 20px 0 0;padding:44px 40px 36px;border:1px solid #222;border-bottom:none;">
-              {company_line}
               <h1 style="margin:0 0 16px;font-size:30px;font-weight:900;color:#ffffff;line-height:1.25;">{headline}</h1>
               <p style="margin:0;font-size:16px;color:#94a3b8;line-height:1.7;">{sub}</p>
             </td>
