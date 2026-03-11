@@ -18,6 +18,30 @@ _PIXEL = (
 
 TOPAGENDA_URL = "https://topagenda.online"
 
+_BOT_SIGNATURES = (
+    "googleimageproxy",
+    "googlebot",
+    "bingbot",
+    "yahoo! slurp",
+    "mailjet",
+    "brevo",
+    "sendgrid",
+    "amazonses",
+    "preview",
+    "spider",
+    "crawler",
+    "bot/",
+    "scrapy",
+    "python-requests",
+    "curl/",
+    "wget/",
+)
+
+
+def _is_bot(user_agent: str) -> bool:
+    ua = (user_agent or "").lower()
+    return any(sig in ua for sig in _BOT_SIGNATURES)
+
 
 def _detect_device(user_agent: str) -> str:
     ua = (user_agent or "").lower()
@@ -29,9 +53,13 @@ def _detect_device(user_agent: str) -> str:
 async def handle_open(request: web.Request) -> web.Response:
     try:
         lead_id = int(request.match_info["lead_id"])
-        device = _detect_device(request.headers.get("User-Agent", ""))
-        record_open(lead_id, device)
-        logger.debug(f"[Track] Abertura: lead_id={lead_id} device={device}")
+        ua = request.headers.get("User-Agent", "")
+        if _is_bot(ua):
+            logger.debug(f"[Track] Abertura ignorada (bot): lead_id={lead_id} ua={ua[:60]}")
+        else:
+            device = _detect_device(ua)
+            record_open(lead_id, device)
+            logger.debug(f"[Track] Abertura: lead_id={lead_id} device={device}")
     except Exception:
         pass
     return web.Response(body=_PIXEL, content_type="image/gif",
