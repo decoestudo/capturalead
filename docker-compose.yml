@@ -28,8 +28,6 @@ services:
       POSTGRES_DB: leads_db
       POSTGRES_USER: leads_user
       POSTGRES_PASSWORD: leads_pass
-    ports:
-      - "5434:5432"   # só para acesso local/debug — remover em produção se não precisar
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
