@@ -2,28 +2,30 @@ version: '3.8'
 
 services:
   app:
+    image: lead_scraper-app:latest
     build: .
     env_file: .env
-    restart: unless-stopped
     depends_on:
       - postgres
       - redis
     volumes:
-      - .:/app
+      - /opt/capturalead/lead_scraper:/app
     networks:
       - internal
       - shared-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=shared-net"
-      - "traefik.http.routers.leadtrack.rule=Host(`track.topagenda.online`)"
-      - "traefik.http.routers.leadtrack.entrypoints=websecure"
-      - "traefik.http.routers.leadtrack.tls.certresolver=letsencryptresolver"
-      - "traefik.http.services.leadtrack.loadbalancer.server.port=8080"
+    deploy:
+      restart_policy:
+        condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=shared-net"
+        - "traefik.http.routers.leadtrack.rule=Host(`track.topagenda.online`)"
+        - "traefik.http.routers.leadtrack.entrypoints=websecure"
+        - "traefik.http.routers.leadtrack.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.leadtrack.loadbalancer.server.port=8080"
 
   postgres:
     image: postgres:15
-    restart: unless-stopped
     environment:
       POSTGRES_DB: leads_db
       POSTGRES_USER: leads_user
@@ -37,38 +39,27 @@ services:
       retries: 10
     networks:
       - internal
+    deploy:
+      restart_policy:
+        condition: on-failure
 
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
     volumes:
       - redisdata:/data
     networks:
       - internal
-
-  # Roda uma vez para baixar + importar dados da Receita Federal
-  # Uso: docker-compose run --rm importer
-  importer:
-    build: .
-    env_file: .env
-    command: python scripts/importar_receita.py
-    depends_on:
-      postgres:
-        condition: service_healthy
-    profiles:
-      - import
-    volumes:
-      - receita_tmp:/tmp/receita
-    networks:
-      - internal
+    deploy:
+      restart_policy:
+        condition: on-failure
 
 volumes:
   pgdata:
   redisdata:
-  receita_tmp:
 
 networks:
   internal:
-    driver: bridge
+    driver: overlay
+    attachable: true
   shared-net:
     external: true
