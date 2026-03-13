@@ -6,10 +6,8 @@ services:
     env_file: .env
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      - postgres
+      - redis
     volumes:
       - .:/app
     networks:

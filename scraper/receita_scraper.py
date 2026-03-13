@@ -4,6 +4,7 @@ Zero custo, zero rate limit, zero dependência de API externa.
 """
 import logging
 from database.db import get_connection
+from utils.email_cleaner import is_valid_email
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ def scrape_receita(niche: str, country: str, max_results: int = 100) -> list[dic
             cnpj, nome_fantasia, email, ddd, telefone, uf, municipio = row
             email = (email or "").lower().strip()
 
-            if not email or "@" not in email:
+            if not is_valid_email(email):
                 continue
             if any(skip in email for skip in SKIP_EMAILS):
                 continue

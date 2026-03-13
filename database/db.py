@@ -2,7 +2,7 @@ import logging
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from config.settings import DATABASE_URL
-from utils.email_cleaner import clean_email
+from utils.email_cleaner import clean_email, is_valid_email
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ def insert_lead(company_name: str, email: str, website: str = None,
                 phone: str = None, source: str = None,
                 niche: str = None, country: str = None) -> bool:
     email = clean_email(email)
-    if not email or "@" not in email:
+    if not is_valid_email(email):
         return False
     if email_exists(email):
         return False

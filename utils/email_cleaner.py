@@ -12,6 +12,42 @@ import difflib
 import logging
 import re
 
+# ── Provedores pessoais (onde local genérico = inválido) ─────────────────────
+_PERSONAL_DOMAINS = {
+    "gmail.com", "hotmail.com", "outlook.com", "yahoo.com", "yahoo.com.br",
+    "icloud.com", "live.com", "me.com", "msn.com", "ymail.com",
+    "uol.com.br", "terra.com.br", "bol.com.br", "ig.com.br",
+}
+
+# ── Padrões inválidos na parte local (antes do @) ────────────────────────────
+_INVALID_LOCAL_RE = re.compile(
+    r"^(.)\1{4,}$"          # mesmo caractere 5+ vezes: xxxxxxx, 111111, aaaaa
+    r"|^\d{6,}$"            # só números com 6+ dígitos: 123456789
+    r"|^(test(e|ing)?|email|sememail|noemail|semcadastro|placeholder"
+    r"|xxxxx+|zzzzz+|aaaaa+|nada|vazio|invalido|invalid|dummy|fake)$",
+    re.IGNORECASE,
+)
+
+# ── Locais genéricos que só valem como inválido em provedores pessoais ────────
+_GENERIC_LOCAL = {
+    "contato", "email", "teste", "test", "info", "faleconosco",
+    "atendimento", "comercial", "vendas", "suporte", "support",
+    "admin", "administracao", "noreply", "no-reply",
+}
+
+# ── Emails completos conhecidos como inválidos ────────────────────────────────
+_INVALID_FULL_EMAILS = {
+    "nihil@nihil.com.br",
+    "contato@gmail.com",
+    "contato@hotmail.com",
+    "contato@yahoo.com",
+    "contato@yahoo.com.br",
+    "email@gmail.com",
+    "teste@gmail.com",
+    "test@gmail.com",
+    "mei@gov.br",
+}
+
 logger = logging.getLogger(__name__)
 
 # ── Mapa explícito de typos conhecidos ──────────────────────────────────────
@@ -110,6 +146,35 @@ def _fuzzy_fix_2seg(domain: str) -> str:
     if matches and matches[0] != domain:
         return matches[0]
     return domain
+
+
+def is_valid_email(email: str) -> bool:
+    """
+    Retorna False para emails obviamente inválidos, de teste ou placeholder.
+    Deve ser chamado APÓS clean_email().
+    """
+    if not email or "@" not in email:
+        return False
+
+    email = email.lower().strip()
+
+    if email in _INVALID_FULL_EMAILS:
+        return False
+
+    local, domain = email.rsplit("@", 1)
+
+    if not local or not domain or "." not in domain:
+        return False
+
+    # Parte local claramente inválida (xxxx, 123456, teste, etc.)
+    if _INVALID_LOCAL_RE.match(local):
+        return False
+
+    # Local genérico em provedor pessoal (contato@gmail.com, info@hotmail.com)
+    if local in _GENERIC_LOCAL and domain in _PERSONAL_DOMAINS:
+        return False
+
+    return True
 
 
 def clean_email(email: str) -> str:
