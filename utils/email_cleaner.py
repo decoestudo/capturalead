@@ -22,10 +22,12 @@ _PERSONAL_DOMAINS = {
 # ── Padrões inválidos na parte local (antes do @) ────────────────────────────
 _INVALID_LOCAL_RE = re.compile(
     r"^(.)\1{4,}$"          # mesmo caractere 5+ vezes: xxxxxxx, 111111, aaaaa
-    r"|^\d{6,}$"            # só números com 6+ dígitos: 123456789
-    r"|^0{5,}"              # placeholder Receita Federal: 00000000_142, 00000000 etc.
+    r"|^\d{6,}$"            # só números com 6+ dígitos: 123456, 123123, 1231213
+    r"|^0{5,}"              # placeholder Receita Federal: 00000000_142
+    r"|^(12345|123456|654321|123123|111111|000000|999999|112233|121212)$"  # sequências óbvias
     r"|^(test(e|ing)?|email|sememail|noemail|semcadastro|placeholder"
-    r"|xxxxx+|zzzzz+|aaaaa+|nada|vazio|invalido|invalid|dummy|fake)$",
+    r"|xxxxx+|zzzzz+|aaaaa+|nada|vazio|invalido|invalid|dummy|fake"
+    r"|meuemail|seuemail|emailaqui|coloqueaqui|inserir|digitar)$",
     re.IGNORECASE,
 )
 
@@ -34,6 +36,8 @@ _GENERIC_LOCAL = {
     "contato", "email", "teste", "test", "info", "faleconosco",
     "atendimento", "comercial", "vendas", "suporte", "support",
     "admin", "administracao", "noreply", "no-reply",
+    "meuemail", "seuemail", "meu", "seu", "usuario", "user",
+    "empresa", "negocio", "business", "nome", "name",
 }
 
 # ── Emails completos conhecidos como inválidos ────────────────────────────────

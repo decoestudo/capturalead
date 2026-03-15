@@ -78,13 +78,14 @@ def init_db():
             cur.execute(CREATE_TABLE_SQL)
             # Migrations para bases existentes
             for col, definition in [
-                ("score",        "INTEGER"),
-                ("template_id",  "INTEGER"),
-                ("subject",      "TEXT"),
-                ("opened_at",    "TIMESTAMP"),
-                ("clicked_at",   "TIMESTAMP"),
-                ("open_device",  "TEXT"),
-                ("click_device", "TEXT"),
+                ("score",          "INTEGER"),
+                ("template_id",    "INTEGER"),
+                ("subject",        "TEXT"),
+                ("opened_at",      "TIMESTAMP"),
+                ("clicked_at",     "TIMESTAMP"),
+                ("open_device",    "TEXT"),
+                ("click_device",   "TEXT"),
+                ("email_invalid",  "BOOLEAN DEFAULT FALSE"),
             ]:
                 cur.execute(f"ALTER TABLE leads ADD COLUMN IF NOT EXISTS {col} {definition};")
             # Pontua leads antigos sem score
@@ -130,6 +131,17 @@ def insert_lead(company_name: str, email: str, website: str = None,
         return True
     except psycopg2.IntegrityError:
         return False
+
+
+def mark_email_invalid(lead_id: int):
+    """Marca email como possivelmente inválido — não será enviado novamente."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE leads SET email_invalid = TRUE WHERE id = %s",
+                (lead_id,),
+            )
+        conn.commit()
 
 
 def record_sent(lead_id: int, template_id: int, subject: str):
@@ -239,7 +251,7 @@ def get_unsent_leads(limit: int = 100):
             cur.execute(
                 """
                 SELECT * FROM leads
-                WHERE sent = FALSE
+                WHERE sent = FALSE AND (email_invalid IS NULL OR email_invalid = FALSE)
                 ORDER BY score DESC NULLS LAST
                 LIMIT %s
                 """,
@@ -268,5 +280,7 @@ def mark_sent(lead_id: int):
 def count_unsent() -> int:
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM leads WHERE sent = FALSE")
+            cur.execute(
+                "SELECT COUNT(*) FROM leads WHERE sent = FALSE AND (email_invalid IS NULL OR email_invalid = FALSE)"
+            )
             return cur.fetchone()[0]

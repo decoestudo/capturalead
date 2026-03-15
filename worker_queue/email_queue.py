@@ -2,7 +2,8 @@ import logging
 import random
 import time
 import threading
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 import redis as redis_lib
 from config.settings import (
     REDIS_URL,
@@ -23,6 +24,27 @@ DAILY_LIMIT_KEY  = "email_daily_limit"
 PAUSED_KEY       = "email_paused"
 
 _stop_event = threading.Event()
+
+_BRT = ZoneInfo("America/Sao_Paulo")
+_SEND_HOUR_START = 7   # 07:00 BRT
+_SEND_HOUR_END   = 22  # 22:00 BRT
+
+
+def _is_sending_window() -> bool:
+    """Retorna True se o horário atual em BRT está entre 7h e 22h."""
+    hour = datetime.now(_BRT).hour
+    return _SEND_HOUR_START <= hour < _SEND_HOUR_END
+
+
+def _seconds_until_window_opens() -> int:
+    """Retorna quantos segundos faltam para 7h BRT (hoje ou amanhã)."""
+    now = datetime.now(_BRT)
+    if now.hour < _SEND_HOUR_START:
+        next_open = now.replace(hour=_SEND_HOUR_START, minute=0, second=0, microsecond=0)
+    else:
+        tomorrow = now + timedelta(days=1)
+        next_open = tomorrow.replace(hour=_SEND_HOUR_START, minute=0, second=0, microsecond=0)
+    return max(0, int((next_open - now).total_seconds()))
 
 
 def get_redis():
@@ -96,15 +118,13 @@ def set_paused(paused: bool):
 
 
 def _process_batch():
-    from database.db import record_sent, get_connection
+    from database.db import record_sent, mark_email_invalid, get_connection
     from mailer.smtp_sender import send_email
+    from utils.email_cleaner import clean_email, is_valid_email
     import psycopg2
     from psycopg2.extras import RealDictCursor
 
     if daily_limit_reached():
-        sent = get_daily_sent()
-        limit = get_daily_limit()
-        logger.info(f"Limite diário atingido ({sent}/{limit}). Aguardando amanhã.")
         return
 
     remaining = get_daily_limit() - get_daily_sent()
@@ -133,10 +153,18 @@ def _process_batch():
 
     sent_count = 0
     for lead in leads:
+        email = clean_email((lead["email"] or "").strip().lower())
+
+        # Valida email antes de enviar
+        if not is_valid_email(email):
+            logger.warning(f"[PreSend] Email inválido descartado: {lead['email']!r} (id={lead['id']})")
+            mark_email_invalid(lead["id"])
+            continue
+
         template_id = random.randint(1, 20)
         subject     = random.choice(SUBJECTS)
         success = send_email(
-            to=lead["email"],
+            to=email,
             subject=subject,
             company_name=lead.get("company_name", ""),
             template_id=template_id,
@@ -158,9 +186,22 @@ def worker_loop():
             if is_paused():
                 _stop_event.wait(timeout=30)
                 continue
-            if daily_limit_reached():
-                _stop_event.wait(timeout=600)
+
+            if not _is_sending_window():
+                secs = _seconds_until_window_opens()
+                h, m = divmod(secs // 60, 60)
+                logger.info(f"Fora do horário de envio (7h–22h BRT). Retomando em {h}h{m:02d}m.")
+                # Dorme em fatias de 5 min para não travar o processo
+                _stop_event.wait(timeout=min(secs, 300))
                 continue
+
+            if daily_limit_reached():
+                secs = _seconds_until_window_opens()
+                h, m = divmod(secs // 60, 60)
+                logger.info(f"Limite diário atingido. Retomando amanhã às 7h BRT (em {h}h{m:02d}m).")
+                _stop_event.wait(timeout=min(secs, 300))
+                continue
+
             if queue_length() > 0:
                 _process_batch()
                 wait_minutes = random.uniform(MAILER_MIN_WAIT_MINUTES, MAILER_MAX_WAIT_MINUTES)
