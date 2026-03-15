@@ -10,13 +10,15 @@ logger = logging.getLogger(__name__)
 
 # CNAEs por nicho (mesmos do casadosdados_scraper)
 NICHE_CNAES = {
-    "barbearia":               ["9602501"],
-    "salão de beleza":         ["9602501"],
-    "manicure":                ["9602501"],
-    "pedicure":                ["9602501"],
-    "nail designer":           ["9602501", "9602502"],
-    "designer de sobrancelha": ["9602501", "9602502"],
-    "nutricionista":           ["8630503", "8630599"],
+    "barbearia":        ["9602501"],
+    "salão de beleza":  ["9602501"],
+    "manicure":         ["9602501"],
+    "clínica dentária": ["8630504"],
+    "psicólogo":        ["8650003"],
+    "fisioterapia":     ["8650004"],
+    "nutricionista":    ["8630503", "8630599"],
+    "personal trainer": ["9313100"],
+    "estética":         ["9602502"],
 }
 
 SKIP_EMAILS = [

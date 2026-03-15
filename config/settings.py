@@ -51,10 +51,12 @@ NICHES = [
     "barbearia",
     "salão de beleza",
     "manicure",
-    "pedicure",
-    "nail designer",
-    "designer de sobrancelha",
+    "clínica dentária",
+    "psicólogo",
+    "fisioterapia",
     "nutricionista",
+    "personal trainer",
+    "estética",
 ]
 
 # Delays (seconds)
