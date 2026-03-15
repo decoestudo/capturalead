@@ -293,23 +293,6 @@ def register_handlers(client: Client):
 
 # ── scraping task ─────────────────────────────────────────────────────────────
 
-def _allocate_budget(total: int, niches: list[str]) -> dict[str, int]:
-    """Distribui aleatoriamente o total de emails entre os nichos."""
-    shuffled = niches[:]
-    random.shuffle(shuffled)
-    weights = [random.randint(1, 10) for _ in shuffled]
-    total_w = sum(weights)
-    budget: dict[str, int] = {}
-    remaining = total
-    for i, niche in enumerate(shuffled[:-1]):
-        alloc = max(1, round(weights[i] / total_w * total))
-        alloc = min(alloc, remaining - (len(shuffled) - i - 1))
-        budget[niche] = alloc
-        remaining -= alloc
-    budget[shuffled[-1]] = max(1, remaining)
-    return budget
-
-
 async def _scraping_task(client: Client, chat_id: int, max_results: int):
     from config.settings import NICHES
     from scraper.receita_scraper import scrape_receita, _check_table_exists
@@ -320,9 +303,9 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
     total_new   = 0
     stop_event  = asyncio.Event()
 
-    # Distribui o orçamento aleatoriamente entre nichos
-    budget = _allocate_budget(max_results, NICHES)
-    niches_ordered = list(budget.keys())  # já embaralhado
+    # Embaralha os nichos para variar a ordem a cada coleta
+    niches_ordered = NICHES[:]
+    random.shuffle(niches_ordered)
 
     async def save_lead(company_name, email, website, phone, source, niche) -> bool:
         nonlocal total_new
@@ -375,11 +358,6 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
         except Exception as e:
             logger.error(f"[CasaDados] {niche}: {e}")
 
-    # Mostra a distribuição sorteada
-    budget_txt = "\n".join(
-        f"  🎲  {n.capitalize()}: **{q}** emails"
-        for n, q in budget.items()
-    )
     progress_msg = await client.send_message(
         chat_id,
         "┌─────────────────────────────┐\n"
@@ -389,18 +367,21 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
         f"🎯  Meta:  **{max_results:,}** emails\n"
         f"📥  Coletados: **0**\n"
         "\n"
-        "━━━━━━  Distribuição  ━━━━━━\n"
-        f"{budget_txt}",
+        "_Iniciando..._",
     )
 
     for i, niche in enumerate(niches_ordered, 1):
         if stop_event.is_set():
             break
-        quota = budget[niche]
+        # Cada nicho recebe o total restante como quota —
+        # assim nenhum lead disponível é desperdiçado por orçamento fixo
+        remaining = max_results - total_new
+        if remaining <= 0:
+            break
         if use_receita:
-            await receita_worker(niche, quota)
+            await receita_worker(niche, remaining)
         else:
-            await casadosdados_worker(niche, quota)
+            await casadosdados_worker(niche, remaining)
 
         # atualiza progresso
         done_txt = "\n".join(

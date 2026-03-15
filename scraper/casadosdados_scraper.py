@@ -25,7 +25,6 @@ NICHE_CNAES = {
     "nail designer":            ["9602501", "9602502"],
     "designer de sobrancelha":  ["9602501", "9602502"],  # 9602502 = estética e beleza
     "nutricionista":            ["8630503", "8630599"],  # ambulatorial consultas + não especificados
-    "lava jato":                ["4520001", "4520002", "4520006"],
 }
 
 SKIP_EMAILS = [

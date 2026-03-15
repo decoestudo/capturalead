@@ -55,7 +55,6 @@ NICHES = [
     "nail designer",
     "designer de sobrancelha",
     "nutricionista",
-    "lava jato",
 ]
 
 # Delays (seconds)

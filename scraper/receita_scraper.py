@@ -17,7 +17,6 @@ NICHE_CNAES = {
     "nail designer":           ["9602501", "9602502"],
     "designer de sobrancelha": ["9602501", "9602502"],
     "nutricionista":           ["8630503", "8630599"],
-    "lava jato":               ["4520001", "4520002", "4520006"],
 }
 
 SKIP_EMAILS = [
