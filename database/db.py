@@ -246,17 +246,31 @@ def get_device_stats() -> dict:
 
 
 def get_unsent_leads(limit: int = 100):
+    from config.settings import SKIP_DOMAINS
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT * FROM leads
-                WHERE sent = FALSE AND (email_invalid IS NULL OR email_invalid = FALSE)
-                ORDER BY score DESC NULLS LAST
-                LIMIT %s
-                """,
-                (limit,),
-            )
+            if SKIP_DOMAINS:
+                cur.execute(
+                    """
+                    SELECT * FROM leads
+                    WHERE sent = FALSE
+                      AND (email_invalid IS NULL OR email_invalid = FALSE)
+                      AND SPLIT_PART(email, '@', 2) != ALL(%s)
+                    ORDER BY score DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (SKIP_DOMAINS, limit),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT * FROM leads
+                    WHERE sent = FALSE AND (email_invalid IS NULL OR email_invalid = FALSE)
+                    ORDER BY score DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
             return cur.fetchall()
 
 

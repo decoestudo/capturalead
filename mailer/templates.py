@@ -12,18 +12,18 @@ SUBJECTS = [
     "Agenda cheia todo dia — sem responder mensagem",
     "Chega de cliente faltando sem avisar",
     "Como negócios de serviço estão lotando a agenda no piloto automático",
-    "Você ainda gerencia sua agenda manualmente?",
-    "Automatize sua agenda e foque no que importa",
+    "Sua agenda perde clientes enquanto você dorme",
+    "Cliente que não conseguiu marcar foi direto para o concorrente",
     "Clientes somem quando não conseguem marcar online — sabia?",
     "O segredo dos negócios com agenda sempre cheia",
     "Quanto você perdeu hoje por não ter agendamento online?",
     "3 minutos para transformar a gestão da sua agenda",
     "Seus clientes marcam com o concorrente porque é mais fácil",
-    "Nunca mais perca um cliente por falta de disponibilidade",
+    "Enquanto você estava atendendo, 3 clientes desistiram de marcar",
     "A agenda que trabalha enquanto você descansa",
-    "Teste grátis: para ver a diferença na sua agenda",
+    "7 dias grátis — veja agendamentos entrando sozinhos",
     "Reduza faltas e aumente o faturamento — veja como",
-    "Seu negócio merece uma agenda profissional",
+    "O cliente ligou, você não atendeu — e ele marcou com outro",
 ]
 
 # 20 variantes de conteúdo: accent, bg1, bg2, headline, sub, pain (3 itens), solution, cta, testimonial
@@ -103,7 +103,7 @@ VARIANTS = [
             "🤯 Difícil saber o que está agendado, o que foi cancelado, o que está pendente",
         ],
         "solution": "Imagine acordar e já ter novos agendamentos confirmados. Com o <strong style='color:#fff'>TopAgenda</strong>, seu negócio trabalha mesmo quando você não está — agenda preenchida, clientes satisfeitos.",
-        "cta": "⚡ Ver como funciona",
+        "cta": "⚡ Quero minha agenda automática agora",
         "testimonial": "Economizo pelo menos 2 horas por dia que antes gastava gerenciando agenda. Agora uso esse tempo para atender mais clientes e ganhar mais.",
     },
     {   # 7 — azul escuro: trabalha enquanto dorme
@@ -272,7 +272,7 @@ VARIANTS = [
             "🤝 Você precisa de uma solução que funcione — não de outro problema",
         ],
         "solution": "O <strong style='color:#fff'>TopAgenda</strong> foi desenvolvido para ser intuitivo e bonito. Você configura em minutos, seus clientes adoram a facilidade — e você fica com mais tempo para o que importa.",
-        "cta": "👀 Ver a experiência do cliente",
+        "cta": "👀 Ver como meus clientes vão agendar",
         "testimonial": "Configurei em 20 minutos sem precisar de suporte. No mesmo dia já tinha clientes agendando. A simplicidade é o maior diferencial.",
     },
     {   # 20 — âmbar escuro: teste grátis
@@ -420,21 +420,23 @@ def render_template(
           <!-- CTA -->
           <tr>
             <td style="background:{bg1};border-radius:0 0 20px 20px;padding:36px 40px;border:1px solid #222;border-top:2px solid {accent};text-align:center;">
-              <p style="margin:0 0 8px;font-size:20px;font-weight:900;color:#ffffff;">Seu painel está esperando por você.</p>
-              <p style="margin:0 0 28px;font-size:14px;color:#94a3b8;">Clique abaixo e transforme sua agenda em segundos.</p>
+              <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:{accent};letter-spacing:1px;text-transform:uppercase;">✅ 7 dias grátis — sem cartão de crédito</p>
+              <p style="margin:0 0 6px;font-size:20px;font-weight:900;color:#ffffff;">Seu painel está esperando por você.</p>
+              <p style="margin:0 0 8px;font-size:13px;color:#64748b;">Mais de 2.000 negócios já automatizaram a agenda com o TopAgenda</p>
+              <p style="margin:0 0 24px;font-size:14px;color:#94a3b8;">Clique abaixo e comece em menos de 2 minutos — sem complicação.</p>
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
                 <tr>
                   <td style="border-radius:12px;background:{accent};box-shadow:0 6px 24px rgba(0,0,0,0.4);">
                     <a href="{click_url}" target="_blank"
-                      style="display:inline-block;padding:16px 44px;font-size:16px;font-weight:800;color:#ffffff;text-decoration:none;">
+                      style="display:inline-block;padding:18px 48px;font-size:17px;font-weight:800;color:#ffffff;text-decoration:none;">
                       {cta}
                     </a>
                   </td>
                 </tr>
               </table>
-              <p style="margin:20px 0 0;font-size:13px;color:#475569;">
-                Não tem conta?
-                <a href="https://topagenda.online/register" style="color:{accent};text-decoration:underline;">Crie grátis em 2 minutos</a>
+              <p style="margin:16px 0 0;font-size:13px;color:#475569;">
+                Ou acesse diretamente:
+                <a href="{click_url}" style="color:{accent};text-decoration:underline;">topagenda.online</a>
               </p>
             </td>
           </tr>

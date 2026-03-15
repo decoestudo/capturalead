@@ -66,6 +66,10 @@ MAILER_MAX_WAIT_MINUTES = float(os.getenv("MAILER_MAX_WAIT_MINUTES", "5"))
 MAILER_DAILY_MIN        = int(os.getenv("MAILER_DAILY_MIN", "100"))   # mínimo de envios por dia
 MAILER_DAILY_MAX        = int(os.getenv("MAILER_DAILY_MAX", "300"))   # máximo de envios por dia
 
+# Domínios com taxa de abertura historicamente baixa — não enviar
+_skip_raw    = os.getenv("SKIP_DOMAINS", "uol.com.br,ig.com.br,bol.com.br,brturbo.com.br,pop.com.br")
+SKIP_DOMAINS = [d.strip() for d in _skip_raw.split(",") if d.strip()]
+
 # Tracking
 TRACKING_BASE_URL = os.getenv("TRACKING_BASE_URL", "")  # Ex: https://yourserver.com:8080
 TRACKING_PORT     = int(os.getenv("TRACKING_PORT", "8080"))
