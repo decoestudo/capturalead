@@ -23,6 +23,7 @@ _PERSONAL_DOMAINS = {
 _INVALID_LOCAL_RE = re.compile(
     r"^(.)\1{4,}$"          # mesmo caractere 5+ vezes: xxxxxxx, 111111, aaaaa
     r"|^\d{6,}$"            # só números com 6+ dígitos: 123456789
+    r"|^0{5,}"              # placeholder Receita Federal: 00000000_142, 00000000 etc.
     r"|^(test(e|ing)?|email|sememail|noemail|semcadastro|placeholder"
     r"|xxxxx+|zzzzz+|aaaaa+|nada|vazio|invalido|invalid|dummy|fake)$",
     re.IGNORECASE,
@@ -131,6 +132,7 @@ _FUZZY_TARGETS = [
     "icloud.com",
     "ymail.com",
     "msn.com",
+    "mail.com",     # domínio legítimo — evita ser corrigido erroneamente para ymail.com
 ]
 
 

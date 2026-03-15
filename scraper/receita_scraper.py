@@ -4,7 +4,7 @@ Zero custo, zero rate limit, zero dependência de API externa.
 """
 import logging
 from database.db import get_connection
-from utils.email_cleaner import is_valid_email
+from utils.email_cleaner import is_valid_email, clean_email
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,10 @@ def scrape_receita(niche: str, country: str, max_results: int = 100) -> list[dic
                         COALESCE(m.nome, e.municipio_cod) AS municipio
                     FROM cnpj_estabelecimentos e
                     LEFT JOIN cnpj_municipios m ON m.codigo = e.municipio_cod
-                    LEFT JOIN leads l ON LOWER(l.email) = LOWER(e.email)
+                    LEFT JOIN leads l ON (
+                        LOWER(l.email) = LOWER(e.email)
+                        OR LOWER(l.email) = LOWER(REGEXP_REPLACE(e.email, '\.com\.br$', '.com', 'i'))
+                    )
                     WHERE e.cnae_fiscal_principal = ANY(%s)
                       AND e.situacao_cadastral = '02'
                       AND e.email IS NOT NULL
@@ -97,7 +100,7 @@ def scrape_receita(niche: str, country: str, max_results: int = 100) -> list[dic
                 break
 
             cnpj, nome_fantasia, email, ddd, telefone, uf, municipio = row
-            email = (email or "").lower().strip()
+            email = clean_email((email or "").lower().strip())
 
             if not is_valid_email(email):
                 continue
