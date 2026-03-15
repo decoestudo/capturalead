@@ -31,11 +31,19 @@ _INVALID_LOCAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ── Locais bloqueados em QUALQUER domínio (departamentos, no-reply, SAC) ──────
+_ROLE_LOCAL = {
+    "naoresponder", "nao-responder", "nao.responder", "donotreply", "do-not-reply",
+    "sac", "ouvidoria", "licitacao", "fiscal", "juridico", "financeiro",
+    "compras", "rh", "recursos.humanos", "dp", "ti", "suporte", "support",
+    "noreply", "no-reply", "no.reply",
+}
+
 # ── Locais genéricos que só valem como inválido em provedores pessoais ────────
 _GENERIC_LOCAL = {
     "contato", "email", "teste", "test", "info", "faleconosco",
-    "atendimento", "comercial", "vendas", "suporte", "support",
-    "admin", "administracao", "noreply", "no-reply",
+    "atendimento", "comercial", "vendas",
+    "admin", "administracao",
     "meuemail", "seuemail", "meu", "seu", "usuario", "user",
     "empresa", "negocio", "business", "nome", "name",
 }
@@ -172,8 +180,17 @@ def is_valid_email(email: str) -> bool:
     if not local or not domain or "." not in domain:
         return False
 
+    # TLD deve ser apenas letras (2–6 chars): rejeita gmail.com13272477, etc.
+    tld = domain.rsplit(".", 1)[-1]
+    if not re.match(r"^[a-z]{2,6}$", tld):
+        return False
+
     # Parte local claramente inválida (xxxx, 123456, teste, etc.)
     if _INVALID_LOCAL_RE.match(local):
+        return False
+
+    # Locais de departamento/no-reply bloqueados em qualquer domínio
+    if local in _ROLE_LOCAL:
         return False
 
     # Local genérico em provedor pessoal (contato@gmail.com, info@hotmail.com)
