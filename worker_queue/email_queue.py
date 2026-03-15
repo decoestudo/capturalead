@@ -202,13 +202,21 @@ def worker_loop():
                 _stop_event.wait(timeout=min(secs, 300))
                 continue
 
-            if queue_length() > 0:
-                _process_batch()
-                wait_minutes = random.uniform(MAILER_MIN_WAIT_MINUTES, MAILER_MAX_WAIT_MINUTES)
-                logger.info(f"Aguardando {wait_minutes:.1f} min antes do próximo lote.")
-                _stop_event.wait(timeout=wait_minutes * 60)
-            else:
-                _stop_event.wait(timeout=30)
+            if queue_length() == 0:
+                # Auto-enfileira leads pendentes sem intervenção manual
+                from database.db import get_unsent_leads
+                leads = get_unsent_leads(limit=10_000)
+                if leads:
+                    enqueue_leads([l["id"] for l in leads])
+                    logger.info(f"Auto-enfileirados {len(leads)} leads pendentes.")
+                else:
+                    _stop_event.wait(timeout=60)
+                continue
+
+            _process_batch()
+            wait_minutes = random.uniform(MAILER_MIN_WAIT_MINUTES, MAILER_MAX_WAIT_MINUTES)
+            logger.info(f"Aguardando {wait_minutes:.1f} min antes do próximo lote.")
+            _stop_event.wait(timeout=wait_minutes * 60)
         except Exception as e:
             logger.error(f"Queue worker error: {e}")
             _stop_event.wait(timeout=10)

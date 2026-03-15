@@ -61,13 +61,15 @@ def _get_quick_stats() -> dict:
                 cur.execute("""
                     SELECT
                         COUNT(*) AS total,
-                        SUM(CASE WHEN sent     THEN 1 ELSE 0 END) AS sent,
-                        SUM(CASE WHEN NOT sent THEN 1 ELSE 0 END) AS pending
+                        SUM(CASE WHEN sent THEN 1 ELSE 0 END) AS sent,
+                        SUM(CASE WHEN NOT sent AND (email_invalid IS NULL OR email_invalid = FALSE)
+                            THEN 1 ELSE 0 END) AS pending,
+                        SUM(CASE WHEN email_invalid = TRUE THEN 1 ELSE 0 END) AS invalid
                     FROM leads
                 """)
                 return dict(cur.fetchone())
     except Exception:
-        return {"total": 0, "sent": 0, "pending": 0}
+        return {"total": 0, "sent": 0, "pending": 0, "invalid": 0}
 
 
 # ── teclados ──────────────────────────────────────────────────────────────────
@@ -146,6 +148,7 @@ def _main_menu_text() -> str:
     total   = s["total"]   or 0
     sent    = s["sent"]    or 0
     pending = s["pending"] or 0
+    invalid = s["invalid"] or 0
     pct     = int(sent * 100 / total) if total else 0
 
     return (
@@ -157,6 +160,7 @@ def _main_menu_text() -> str:
         f"👥  Total de leads:  **{total:,}**\n"
         f"✅  Enviados:        **{sent:,}**\n"
         f"📧  Pendentes:      **{pending:,}**\n"
+        f"⚠️   Inválidos:      **{invalid:,}**\n"
         f"`{_bar(pct)}` **{pct}%** enviado\n"
         "\n"
         "━━━━━━  Menu  ━━━━━━"
@@ -696,13 +700,21 @@ async def _send_test_email(query: CallbackQuery):
 
 async def _show_monitor(query: CallbackQuery):
     from database.db import get_email_stats, get_template_stats, get_domain_stats, get_device_stats
-    from worker_queue.email_queue import get_daily_sent, get_daily_limit, queue_length, is_paused
+    from worker_queue.email_queue import (
+        get_daily_sent, get_daily_limit, queue_length, is_paused, _is_sending_window,
+    )
 
+    qs      = _get_quick_stats()
     s       = get_email_stats()
     sent    = s["sent"]    or 0
     opened  = s["opened"]  or 0
     clicked = s["clicked"] or 0
     devices = get_device_stats()
+
+    total   = qs["total"]   or 0
+    pending = qs["pending"] or 0
+    invalid = qs["invalid"] or 0
+    sent_pct = int(sent * 100 / total) if total else 0
 
     open_rate     = round(opened  * 100 / sent,   1) if sent   else 0.0
     click_rate    = round(clicked * 100 / sent,   1) if sent   else 0.0
@@ -713,42 +725,54 @@ async def _show_monitor(query: CallbackQuery):
     daily_pct   = int(daily_sent * 100 / daily_limit) if daily_limit else 0
     na_fila     = queue_length()
     paused      = is_paused()
+    in_window   = _is_sending_window()
 
     templates = get_template_stats()
     domains   = get_domain_stats()
 
     if paused:
         status = "⏸  Pausado"
+    elif not in_window:
+        status = "🌙  Fora do horário (7h–22h BRT)"
     elif daily_sent >= daily_limit:
         status = "🔴  Limite diário atingido"
     else:
         status = "🟢  Enviando"
 
-    # ── Seção 1 — cabeçalho + hoje ──────────────────────────────────────────
+    # ── Seção 1 — hoje ───────────────────────────────────────────────────────
     txt = (
         "📡  **Monitor de Campanhas**\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "\n"
         f"**📅  Hoje** — {status}\n"
-        f"`{_bar(daily_pct, 16)}`  **{daily_pct}%**\n"
-        f"📨  **{daily_sent:,}** / **{daily_limit:,}**  enviados"
-        f"   ·   ⏳ **{na_fila:,}** na fila\n"
+        f"`{_bar(daily_pct, 18)}`  **{daily_pct}%**\n"
+        f"📨  **{daily_sent:,}** / **{daily_limit:,}** enviados   ·   ⏳ **{na_fila:,}** na fila\n"
     )
 
-    # ── Seção 2 — funil ─────────────────────────────────────────────────────
+    # ── Seção 2 — base de leads ──────────────────────────────────────────────
+    txt += (
+        "\n"
+        "**👥  Base de Leads**\n"
+        f"Total       **{total:,}**\n"
+        f"`{_bar(sent_pct, 18)}`  **{sent_pct}%** enviado\n"
+        f"✅  Enviados   **{sent:,}**\n"
+        f"📧  Pendentes  **{pending:,}**\n"
+        f"⚠️   Inválidos  **{invalid:,}**\n"
+    )
+
+    # ── Seção 3 — funil ──────────────────────────────────────────────────────
     txt += (
         "\n"
         "**📊  Funil de Conversão**\n"
-        f"┌ 📨  Enviados  ▸  **{sent:,}**\n"
-        f"├ 👁   Abertos   ▸  **{opened:,}**  `{_bar(int(open_rate), 10)}`  **{open_rate}%**\n"
-        f"└ 🖱   Clicados  ▸  **{clicked:,}**  `{_bar(int(click_rate), 10)}`  **{click_rate}%**\n"
-        f"\n"
-        f"🎯  Quem abriu e clicou: **{click_on_open}%**\n"
+        f"📨  Enviados  **{sent:,}**\n"
+        f"👁  Abertos   **{opened:,}**  `{_bar(int(open_rate), 12)}`  **{open_rate}%**\n"
+        f"🖱  Clicados  **{clicked:,}**  `{_bar(int(click_rate), 12)}`  **{click_rate}%**\n"
+        f"🎯  Click/Open  **{click_on_open}%**\n"
     )
 
-    # ── Seção 3 — top templates ──────────────────────────────────────────────
+    # ── Seção 4 — top templates ───────────────────────────────────────────────
     medals = {0: "🥇", 1: "🥈", 2: "🥉"}
-    txt += "\n**🏆  Top Templates** _(por abertura)_\n"
+    txt += "\n**🏆  Top Templates**\n"
     if templates:
         for i, t in enumerate(templates[:5]):
             tid = t["template_id"] or "?"
@@ -756,33 +780,26 @@ async def _show_monitor(query: CallbackQuery):
             ab  = t["abertos"]   or 0
             cl  = t["clicados"]  or 0
             pct = round(ab * 100 / env, 1) if env else 0.0
-            icon = medals.get(i, "  ▸")
-            txt += (
-                f"{icon}  T#{tid:02d}  `{_bar(int(pct), 9)}`  **{pct}%**\n"
-                f"      {env:,} env  ·  {ab} ab  ·  {cl} cli\n"
-            )
+            icon = medals.get(i, "▸ ")
+            txt += f"{icon}  T#{tid:02d}  `{_bar(int(pct), 12)}`  **{pct}%**  _{env:,}env · {ab}ab · {cl}cli_\n"
     else:
         txt += "_Nenhum dado disponível_\n"
 
-    # ── Seção 4 — provedores ─────────────────────────────────────────────────
+    # ── Seção 5 — provedores ──────────────────────────────────────────────────
     txt += "\n**📮  Por Provedor**\n"
     if domains:
-        for d in domains[:7]:
-            dom   = (d["domain"] or "outros")[:22]
+        for d in domains[:6]:
+            dom   = (d["domain"] or "outros")[:18]
             env_d = d["enviados"]  or 0
             ab_d  = d["abertos"]   or 0
             cl_d  = d["clicados"]  or 0
             pct_d = round(ab_d * 100 / env_d, 1) if env_d else 0.0
-            ab_icon = "👁" if ab_d > 0 else "·"
-            cl_icon = "🖱" if cl_d > 0 else "·"
-            txt += (
-                f"▸  `{dom:<22}`\n"
-                f"    {env_d:,} env  {ab_icon} {ab_d} ab ({pct_d}%)  {cl_icon} {cl_d} cli\n"
-            )
+            bar_d = _bar(int(pct_d), 8)
+            txt += f"`{dom:<18}`  {env_d:,}env  `{bar_d}`  **{pct_d}%**  🖱{cl_d}\n"
     else:
         txt += "_Nenhum dado disponível_\n"
 
-    # ── Seção 5 — dispositivos ───────────────────────────────────────────────
+    # ── Seção 6 — dispositivos ────────────────────────────────────────────────
     open_mob  = devices.get("open_mobile",   0) or 0
     open_desk = devices.get("open_desktop",  0) or 0
     clk_mob   = devices.get("click_mobile",  0) or 0
@@ -790,17 +807,14 @@ async def _show_monitor(query: CallbackQuery):
     open_total = open_mob + open_desk
     clk_total  = clk_mob  + clk_desk
     open_mob_pct  = round(open_mob  * 100 / open_total, 1) if open_total else 0.0
-    open_desk_pct = round(open_desk * 100 / open_total, 1) if open_total else 0.0
     clk_mob_pct   = round(clk_mob   * 100 / clk_total,  1) if clk_total  else 0.0
-    clk_desk_pct  = round(clk_desk  * 100 / clk_total,  1) if clk_total  else 0.0
 
     txt += (
         "\n**📱  Dispositivos**\n"
-        f"_Aberturas:_  📱 **{open_mob}** ({open_mob_pct}%)  🖥 **{open_desk}** ({open_desk_pct}%)\n"
-        f"_Cliques:_    📱 **{clk_mob}** ({clk_mob_pct}%)  🖥 **{clk_desk}** ({clk_desk_pct}%)\n"
+        f"Aberturas  📱 **{open_mob}** ({open_mob_pct}%)  🖥 **{open_desk}** ({100-open_mob_pct if open_total else 0}%)\n"
+        f"Cliques    📱 **{clk_mob}** ({clk_mob_pct}%)  🖥 **{clk_desk}** ({100-clk_mob_pct if clk_total else 0}%)\n"
+        "\n_Atualizado em tempo real._"
     )
-
-    txt += "\n_Atualizado em tempo real._"
 
     await _edit(query, txt,
         reply_markup=InlineKeyboardMarkup([

@@ -284,3 +284,10 @@ def count_unsent() -> int:
                 "SELECT COUNT(*) FROM leads WHERE sent = FALSE AND (email_invalid IS NULL OR email_invalid = FALSE)"
             )
             return cur.fetchone()[0]
+
+
+def count_invalid() -> int:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM leads WHERE email_invalid = TRUE")
+            return cur.fetchone()[0]
