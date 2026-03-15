@@ -21,7 +21,7 @@ SUBJECTS = [
     "Seus clientes marcam com o concorrente porque é mais fácil",
     "Enquanto você estava atendendo, 3 clientes desistiram de marcar",
     "A agenda que trabalha enquanto você descansa",
-    "7 dias grátis — veja agendamentos entrando sozinhos",
+    "Veja agendamentos entrando sozinhos",
     "Reduza faltas e aumente o faturamento — veja como",
     "O cliente ligou, você não atendeu — e ele marcou com outro",
 ]
