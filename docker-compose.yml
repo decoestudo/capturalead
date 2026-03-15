@@ -2,14 +2,14 @@ version: '3.8'
 
 services:
   app:
-    image: lead_scraper-app:latest
+    image: capturalead-app:latest
     build: .
     env_file: .env
     depends_on:
       - postgres
       - redis
     volumes:
-      - /opt/capturalead/lead_scraper:/app
+      - /opt/capturalead:/app
     networks:
       - internal
       - shared-net
