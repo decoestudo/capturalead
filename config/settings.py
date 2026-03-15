@@ -48,15 +48,12 @@ CASADOSDADOS_API_KEY = os.getenv("CASADOSDADOS_API_KEY")
 
 # Scraping
 NICHES = [
-    "barbearia",
-    "salão de beleza",
-    "manicure",
+    "beleza",
     "clínica dentária",
     "psicólogo",
     "fisioterapia",
     "nutricionista",
     "personal trainer",
-    "estética",
 ]
 
 # Delays (seconds)

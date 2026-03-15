@@ -18,15 +18,12 @@ logger = logging.getLogger(__name__)
 
 # Mapeamento nicho → CNAEs relevantes
 NICHE_CNAES = {
-    "barbearia":        ["9602501"],
-    "salão de beleza":  ["9602501"],
-    "manicure":         ["9602501"],
-    "clínica dentária": ["8630504"],                    # Atividade odontológica
-    "psicólogo":        ["8650003"],                    # Atividades de psicologia e psicanálise
-    "fisioterapia":     ["8650004"],                    # Atividades de fisioterapia
+    "beleza":           ["9602501", "9602502"],  # salão, barbearia, manicure, pedicure, estética
+    "clínica dentária": ["8630504"],
+    "psicólogo":        ["8650003"],
+    "fisioterapia":     ["8650004"],
     "nutricionista":    ["8630503", "8630599"],
-    "personal trainer": ["9313100"],                    # Atividades de condicionamento físico
-    "estética":         ["9602502"],                    # Estética e cuidados com a beleza
+    "personal trainer": ["9313100"],
 }
 
 SKIP_EMAILS = [
