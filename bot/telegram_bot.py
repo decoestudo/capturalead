@@ -374,18 +374,23 @@ async def _scraping_task(client: Client, chat_id: int, max_results: int):
         "_Iniciando..._",
     )
 
+    # Distribui cota igualmente entre os nichos.
+    # Nichos que retornam menos do esperado "devolvem" o saldo
+    # para os próximos via recálculo dinâmico da cota.
+    niches_remaining = list(niches_ordered)  # cópia para iterar com índice dinâmico
     for i, niche in enumerate(niches_ordered, 1):
         if stop_event.is_set():
             break
-        # Cada nicho recebe o total restante como quota —
-        # assim nenhum lead disponível é desperdiçado por orçamento fixo
         remaining = max_results - total_new
         if remaining <= 0:
             break
+        # Cota = saldo restante dividido pelos nichos ainda não processados
+        niches_left = len(niches_ordered) - (i - 1)
+        niche_quota = max(1, -(-remaining // niches_left))  # divisão com teto (ceiling)
         if use_receita:
-            await receita_worker(niche, remaining)
+            await receita_worker(niche, niche_quota)
         else:
-            await casadosdados_worker(niche, remaining)
+            await casadosdados_worker(niche, niche_quota)
 
         # atualiza progresso
         done_txt = "\n".join(
