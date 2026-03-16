@@ -39,6 +39,10 @@ _ROLE_LOCAL = {
     "noreply", "no-reply", "no.reply",
 }
 
+# ── Substrings bloqueadas na parte local (email de órgão público/servidor) ────
+# Ex: jgm.fiscalfederal@gmail.com, agente.prf@gmail.com, receita.federal@...
+_BLOCKED_LOCAL_SUBSTRINGS = {"federal", "prf", "receita"}
+
 # ── Locais genéricos que só valem como inválido em provedores pessoais ────────
 _GENERIC_LOCAL = {
     "contato", "email", "teste", "test", "info", "faleconosco",
@@ -191,6 +195,11 @@ def is_valid_email(email: str) -> bool:
 
     # Locais de departamento/no-reply bloqueados em qualquer domínio
     if local in _ROLE_LOCAL:
+        return False
+
+    # Substrings de órgãos públicos/servidores — bloqueia em qualquer domínio
+    # Ex: fiscalfederal, prf, receita
+    if any(kw in local for kw in _BLOCKED_LOCAL_SUBSTRINGS):
         return False
 
     # Local genérico em provedor pessoal (contato@gmail.com, info@hotmail.com)
