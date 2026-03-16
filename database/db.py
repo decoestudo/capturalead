@@ -88,6 +88,20 @@ def init_db():
                 ("email_invalid",  "BOOLEAN DEFAULT FALSE"),
             ]:
                 cur.execute(f"ALTER TABLE leads ADD COLUMN IF NOT EXISTS {col} {definition};")
+            # Invalida leads com palavras de órgão público na parte local
+            cur.execute("""
+                UPDATE leads SET email_invalid = TRUE
+                WHERE (email_invalid IS NULL OR email_invalid = FALSE)
+                  AND sent = FALSE
+                  AND (
+                    SPLIT_PART(email, '@', 1) LIKE '%federal%'
+                    OR SPLIT_PART(email, '@', 1) LIKE '%prf%'
+                    OR SPLIT_PART(email, '@', 1) LIKE '%receita%'
+                  )
+            """)
+            if cur.rowcount:
+                logger.info(f"[Migration] {cur.rowcount} leads de órgão público marcados como inválidos.")
+
             # Pontua leads antigos sem score
             cur.execute("SELECT id, email FROM leads WHERE score IS NULL")
             rows = cur.fetchall()
